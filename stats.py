@@ -9,6 +9,7 @@ Parse logs to show total progress over time.
 import os
 import sys
 import re
+import subprocess
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -162,6 +163,87 @@ def get_hourly_progress(stats_entries):
     return sorted(hourly.items())
 
 
+def get_scanner_process_info():
+    """Get resource usage for scanner_daemon process."""
+    try:
+        # Find scanner_daemon process
+        result = subprocess.run(
+            ['ps', 'aux'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        for line in result.stdout.split('\n'):
+            if 'scanner_daemon.py' in line and 'grep' not in line:
+                parts = line.split()
+                if len(parts) >= 11:
+                    return {
+                        'pid': parts[1],
+                        'cpu': parts[2],
+                        'mem': parts[3],
+                        'vsz': parts[4],
+                        'rss': parts[5],
+                        'running': True
+                    }
+
+        return {'running': False}
+
+    except Exception as e:
+        return {'running': False, 'error': str(e)}
+
+
+def get_system_resources():
+    """Get overall system resource usage."""
+    resources = {}
+
+    try:
+        # Load averages
+        with open('/proc/loadavg', 'r') as f:
+            loads = f.read().split()[:3]
+            resources['load_1min'] = float(loads[0])
+            resources['load_5min'] = float(loads[1])
+            resources['load_15min'] = float(loads[2])
+    except:
+        pass
+
+    try:
+        # Memory info
+        with open('/proc/meminfo', 'r') as f:
+            meminfo = {}
+            for line in f:
+                parts = line.split(':')
+                if len(parts) == 2:
+                    key = parts[0].strip()
+                    value = parts[1].strip().split()[0]
+                    meminfo[key] = int(value)
+
+            total_mem = meminfo.get('MemTotal', 0)
+            avail_mem = meminfo.get('MemAvailable', 0)
+            used_mem = total_mem - avail_mem
+
+            resources['mem_total_gb'] = total_mem / 1024 / 1024
+            resources['mem_used_gb'] = used_mem / 1024 / 1024
+            resources['mem_used_pct'] = (used_mem / total_mem * 100) if total_mem > 0 else 0
+
+    except:
+        pass
+
+    try:
+        # CPU count
+        result = subprocess.run(
+            ['nproc'],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+        resources['cpu_count'] = int(result.stdout.strip())
+    except:
+        pass
+
+    return resources
+
+
 def display_stats():
     """Display comprehensive statistics."""
     print("="*70)
@@ -188,6 +270,36 @@ def display_stats():
     print(f"Current Rate:                {latest['rate']:,.0f} keys/second")
     print(f"Addresses Found:             {latest['found']}")
     print(f"Errors Encountered:          {latest['errors']}")
+    print()
+
+    # System resources
+    print("💻 SYSTEM RESOURCES")
+    print("-"*70)
+
+    sys_res = get_system_resources()
+    proc_info = get_scanner_process_info()
+
+    # Scanner process status
+    if proc_info.get('running'):
+        print(f"Scanner Status:              ✅ RUNNING (PID {proc_info['pid']})")
+        print(f"Scanner CPU Usage:           {proc_info['cpu']}% of one core")
+        print(f"Scanner Memory:              {proc_info['mem']}% ({int(proc_info['rss'])/1024:.1f} MB)")
+    else:
+        print(f"Scanner Status:              ⏸️  NOT RUNNING")
+
+    # System overall
+    if 'cpu_count' in sys_res:
+        print(f"CPU Cores:                   {sys_res['cpu_count']}")
+
+    if 'load_1min' in sys_res:
+        load_pct = (sys_res['load_1min'] / sys_res.get('cpu_count', 1)) * 100
+        print(f"System Load (1/5/15min):     {sys_res['load_1min']:.2f} / {sys_res['load_5min']:.2f} / {sys_res['load_15min']:.2f}")
+        if 'cpu_count' in sys_res:
+            print(f"Load Percentage:             {load_pct:.1f}% (of {sys_res['cpu_count']} cores)")
+
+    if 'mem_total_gb' in sys_res:
+        print(f"Memory Used:                 {sys_res['mem_used_gb']:.1f} GB / {sys_res['mem_total_gb']:.1f} GB ({sys_res['mem_used_pct']:.1f}%)")
+
     print()
 
     # Runtime calculation
