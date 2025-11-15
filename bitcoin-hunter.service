@@ -1,0 +1,33 @@
+[Unit]
+Description=Bitcoin Address Hunter - Autonomous Scanner
+After=network.target
+
+[Service]
+Type=simple
+User=opc
+WorkingDirectory=/home/opc/bitcoin-hunter
+ExecStart=/usr/bin/python3 /home/opc/bitcoin-hunter/scanner_daemon.py
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+StartLimitBurst=5
+StartLimitInterval=60s
+
+# Resource limits (optional - adjust as needed)
+# Limit memory to 2GB
+# MemoryMax=2G
+# Limit CPU to 80%
+# CPUQuota=80%
+
+# Security hardening (optional)
+# NoNewPrivileges=true
+# PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bitcoin-hunter
+
+[Install]
+WantedBy=multi-user.target
