@@ -20,15 +20,19 @@ import logging
 from logging.handlers import RotatingFileHandler
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-import ecdsa
-from ecdsa import SECP256k1, SigningKey
-from ecdsa.util import sigencode_string
 import base58
+try:
+    from coincurve import PrivateKey as CoincurvePrivateKey
+    USING_COINCURVE = True
+except ImportError:
+    USING_COINCURVE = False
 
-
-# Bitcoin secp256k1 parameters
-CURVE = SECP256k1
-G = CURVE.generator
+if not USING_COINCURVE:
+    import ecdsa
+    from ecdsa import SECP256k1, SigningKey
+    from ecdsa.util import sigencode_string
+    CURVE = SECP256k1
+    G = CURVE.generator
 
 
 @dataclass
@@ -216,25 +220,36 @@ class PuzzleSearcher:
         self.stop_event.set()
 
     def _private_key_to_address(self, private_key_bytes):
-        """Convert private key to Bitcoin P2PKH address."""
+        """Convert private key to Bitcoin P2PKH address (fast with coincurve)."""
         import hashlib
         import base58
 
-        sk = SigningKey.from_string(private_key_bytes, curve=CURVE)
-        vk = sk.get_verifying_key()
+        if USING_COINCURVE:
+            # Fast path: Use coincurve (libsecp256k1 C library) - 5-10x faster
+            privkey = CoincurvePrivateKey(private_key_bytes)
+            pubkey_compressed = privkey.public_key.format(compressed=True)
 
-        # Get compressed public key
-        pubkey_point = vk.pubkey.point
-        x = pubkey_point.x()
-        y = pubkey_point.y()
-
-        # Compressed public key format
-        if y % 2 == 0:
-            pubkey_compressed = b'\x02' + x.to_bytes(32, 'big')
+            # Extract coordinates for compatibility (optional, for logging)
+            pubkey_uncompressed = privkey.public_key.format(compressed=False)
+            x = int.from_bytes(pubkey_uncompressed[1:33], 'big')
+            y = int.from_bytes(pubkey_uncompressed[33:65], 'big')
         else:
-            pubkey_compressed = b'\x03' + x.to_bytes(32, 'big')
+            # Fallback: Use ecdsa (pure Python) - slower but works everywhere
+            sk = SigningKey.from_string(private_key_bytes, curve=CURVE)
+            vk = sk.get_verifying_key()
 
-        # Hash160
+            # Get compressed public key
+            pubkey_point = vk.pubkey.point
+            x = pubkey_point.x()
+            y = pubkey_point.y()
+
+            # Compressed public key format
+            if y % 2 == 0:
+                pubkey_compressed = b'\x02' + x.to_bytes(32, 'big')
+            else:
+                pubkey_compressed = b'\x03' + x.to_bytes(32, 'big')
+
+        # Hash160 (same for both paths)
         sha256_hash = hashlib.sha256(pubkey_compressed).digest()
         ripemd160_hash = hashlib.new('ripemd160', sha256_hash).digest()
 
@@ -336,6 +351,7 @@ class PuzzleSearcher:
         print(f"Prize: {self.config.prize_btc} BTC")
         print(f"Status: {self.config.status}")
         print(f"Workers: {self.workers} CPU cores")
+        print(f"Crypto: {'coincurve (libsecp256k1) - FAST' if USING_COINCURVE else 'ecdsa (pure Python) - slow'}")
         print(f"Starting from: {self.start_key:,}")
         print("="*70)
         print()
