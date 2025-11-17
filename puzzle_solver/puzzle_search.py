@@ -15,6 +15,7 @@ import json
 import signal
 import hashlib
 import multiprocessing
+import queue
 import logging
 from logging.handlers import RotatingFileHandler
 from dataclasses import dataclass
@@ -186,7 +187,7 @@ class PuzzleSearcher:
         return self.config.range_min
 
     def _save_checkpoint(self, last_key: int, keys_checked: int, elapsed: float):
-        """Save progress to checkpoint file."""
+        """Save progress to checkpoint file (atomic write)."""
         try:
             data = {
                 'puzzle_num': self.config.puzzle_num,
@@ -197,10 +198,17 @@ class PuzzleSearcher:
                 'progress_percent': ((last_key - self.config.range_min) / self.range_size * 100)
             }
 
-            with open(self.checkpoint_file, 'w') as f:
+            # Write to temp file first, then atomic rename
+            temp_file = f"{self.checkpoint_file}.tmp"
+            with open(temp_file, 'w') as f:
                 json.dump(data, f, indent=2)
+
+            # Atomic rename (prevents corrupted checkpoints)
+            os.replace(temp_file, self.checkpoint_file)
+
+            self.logger.debug(f"Checkpoint saved: {keys_checked:,} keys checked")
         except Exception as e:
-            print(f"Warning: Could not save checkpoint: {e}")
+            self.logger.error(f"Failed to save checkpoint: {e}")
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals."""
@@ -352,6 +360,9 @@ class PuzzleSearcher:
             p.start()
             processes.append(p)
 
+            # Small delay to help all workers start successfully
+            time.sleep(0.2)
+
         print(f"Launched {self.workers} worker processes")
         print()
 
@@ -364,31 +375,41 @@ class PuzzleSearcher:
 
         while any(p.is_alive() for p in processes):
             try:
-                # Check for result
-                if not self.result_queue.empty():
-                    result = self.result_queue.get()
-                    if result.get('found'):
-                        print("\n" + "="*70)
-                        print("🎉 PRIVATE KEY FOUND!")
-                        print("="*70)
-                        print(f"Private Key (decimal): {result['private_key']}")
-                        print(f"Private Key (hex): 0x{result['private_key']:x}")
-                        print(f"Found by worker: {result['worker_id']}")
-                        print("="*70)
+                # Check for result (with timeout to prevent blocking)
+                results_processed = 0
+                while not self.result_queue.empty() and results_processed < 100:
+                    try:
+                        result = self.result_queue.get(timeout=0.1)
+                        if result.get('found'):
+                            print("\n" + "="*70)
+                            print("🎉 PRIVATE KEY FOUND!")
+                            print("="*70)
+                            print(f"Private Key (decimal): {result['private_key']}")
+                            print(f"Private Key (hex): 0x{result['private_key']:x}")
+                            print(f"Found by worker: {result['worker_id']}")
+                            print("="*70)
 
-                        # Stop all workers
-                        self.stop_event.set()
-                        for p in processes:
-                            p.join(timeout=2)
+                            # Stop all workers
+                            self.stop_event.set()
+                            for p in processes:
+                                p.join(timeout=2)
 
-                        return result['private_key']
+                            return result['private_key']
+                        results_processed += 1
+                    except queue.Empty:
+                        break
 
-                # Collect stats
-                while not self.stats_queue.empty():
-                    stat = self.stats_queue.get()
-                    worker_id = stat['worker_id']
-                    total_keys_checked += stat['keys_checked']
-                    worker_progress[worker_id] = stat['current_key']
+                # Collect stats (with limit to prevent infinite loop)
+                stats_processed = 0
+                while not self.stats_queue.empty() and stats_processed < 1000:
+                    try:
+                        stat = self.stats_queue.get(timeout=0.1)
+                        worker_id = stat['worker_id']
+                        total_keys_checked += stat['keys_checked']
+                        worker_progress[worker_id] = stat['current_key']
+                        stats_processed += 1
+                    except queue.Empty:
+                        break
 
                 # Display progress
                 elapsed = time.time() - start_time
@@ -426,13 +447,16 @@ class PuzzleSearcher:
                         flush=True
                     )
 
-                # Save checkpoint
-                if time.time() - last_checkpoint >= checkpoint_interval:
-                    max_progress_key = max(worker_progress.values())
-                    self._save_checkpoint(max_progress_key, total_keys_checked, elapsed)
-                    last_checkpoint = time.time()
+                # Save checkpoint (check time first, save only if we have data)
+                current_time = time.time()
+                if current_time - last_checkpoint >= checkpoint_interval:
+                    if worker_progress:  # Only save if we have progress data
+                        max_progress_key = max(worker_progress.values())
+                        self._save_checkpoint(max_progress_key, total_keys_checked, elapsed)
+                        last_checkpoint = current_time
 
-                time.sleep(0.5)
+                # Small sleep to prevent busy-waiting and give workers time
+                time.sleep(0.1)
 
             except KeyboardInterrupt:
                 print("\n\nInterrupted by user")
