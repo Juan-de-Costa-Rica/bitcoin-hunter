@@ -15,24 +15,19 @@ import json
 import signal
 import hashlib
 import multiprocessing
-import queue
 import logging
 from logging.handlers import RotatingFileHandler
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import ecdsa
+from ecdsa import SECP256k1, SigningKey
+from ecdsa.util import sigencode_string
 import base58
-try:
-    from coincurve import PrivateKey as CoincurvePrivateKey
-    USING_COINCURVE = True
-except ImportError:
-    USING_COINCURVE = False
 
-if not USING_COINCURVE:
-    import ecdsa
-    from ecdsa import SECP256k1, SigningKey
-    from ecdsa.util import sigencode_string
-    CURVE = SECP256k1
-    G = CURVE.generator
+
+# Bitcoin secp256k1 parameters
+CURVE = SECP256k1
+G = CURVE.generator
 
 
 @dataclass
@@ -137,13 +132,10 @@ class PuzzleSearcher:
             self.target_type = 'address'
             self.target_address = config.target_pubkey_hex
             self.target_point = None
-            # Pre-compute hash160 for fast comparison
-            self.target_hash160 = self._address_to_hash160(config.target_pubkey_hex)
         else:
             self.target_type = 'pubkey'
             self.target_point = self._hex_to_point(config.target_pubkey_hex)
             self.target_address = None
-            self.target_hash160 = None
 
         self.range_size = config.range_max - config.range_min
 
@@ -157,14 +149,6 @@ class PuzzleSearcher:
         # Signal handlers
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
-
-    def _address_to_hash160(self, address: str) -> bytes:
-        """Extract hash160 from Bitcoin address for fast comparison."""
-        import base58
-        decoded = base58.b58decode(address)
-        # Remove version byte (1 byte) and checksum (4 bytes)
-        hash160 = decoded[1:-4]
-        return hash160
 
     def _hex_to_point(self, hex_pubkey: str):
         """Convert hex public key to EC point."""
@@ -202,7 +186,7 @@ class PuzzleSearcher:
         return self.config.range_min
 
     def _save_checkpoint(self, last_key: int, keys_checked: int, elapsed: float):
-        """Save progress to checkpoint file (atomic write)."""
+        """Save progress to checkpoint file."""
         try:
             data = {
                 'puzzle_num': self.config.puzzle_num,
@@ -213,154 +197,126 @@ class PuzzleSearcher:
                 'progress_percent': ((last_key - self.config.range_min) / self.range_size * 100)
             }
 
-            # Write to temp file first, then atomic rename
-            temp_file = f"{self.checkpoint_file}.tmp"
-            with open(temp_file, 'w') as f:
+            with open(self.checkpoint_file, 'w') as f:
                 json.dump(data, f, indent=2)
-
-            # Atomic rename (prevents corrupted checkpoints)
-            os.replace(temp_file, self.checkpoint_file)
-
-            self.logger.debug(f"Checkpoint saved: {keys_checked:,} keys checked")
         except Exception as e:
-            self.logger.error(f"Failed to save checkpoint: {e}")
+            print(f"Warning: Could not save checkpoint: {e}")
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals."""
         self.logger.info(f"Received signal {signum}, shutting down...")
         self.stop_event.set()
 
-    def _private_key_to_hash160(self, private_key_bytes):
-        """Convert private key to hash160 (fast, no Base58 encoding)."""
-        import hashlib
-
-        if USING_COINCURVE:
-            # Fast path: Use coincurve (libsecp256k1 C library)
-            privkey = CoincurvePrivateKey(private_key_bytes)
-            pubkey_compressed = privkey.public_key.format(compressed=True)
-        else:
-            # Fallback: Use ecdsa (pure Python)
-            sk = SigningKey.from_string(private_key_bytes, curve=CURVE)
-            vk = sk.get_verifying_key()
-
-            # Get compressed public key
-            pubkey_point = vk.pubkey.point
-            x = pubkey_point.x()
-            y = pubkey_point.y()
-
-            # Compressed public key format
-            if y % 2 == 0:
-                pubkey_compressed = b'\x02' + x.to_bytes(32, 'big')
-            else:
-                pubkey_compressed = b'\x03' + x.to_bytes(32, 'big')
-
-        # Hash160 (SHA256 + RIPEMD160)
-        sha256_hash = hashlib.sha256(pubkey_compressed).digest()
-        ripemd160_hash = hashlib.new('ripemd160', sha256_hash).digest()
-
-        return ripemd160_hash
-
-    def _hash160_to_address(self, hash160: bytes) -> str:
-        """Convert hash160 to Bitcoin P2PKH address (only when needed)."""
+    def _private_key_to_address(self, private_key_bytes):
+        """Convert private key to Bitcoin P2PKH address."""
         import hashlib
         import base58
 
+        sk = SigningKey.from_string(private_key_bytes, curve=CURVE)
+        vk = sk.get_verifying_key()
+
+        # Get compressed public key
+        pubkey_point = vk.pubkey.point
+        x = pubkey_point.x()
+        y = pubkey_point.y()
+
+        # Compressed public key format
+        if y % 2 == 0:
+            pubkey_compressed = b'\x02' + x.to_bytes(32, 'big')
+        else:
+            pubkey_compressed = b'\x03' + x.to_bytes(32, 'big')
+
+        # Hash160
+        sha256_hash = hashlib.sha256(pubkey_compressed).digest()
+        ripemd160_hash = hashlib.new('ripemd160', sha256_hash).digest()
+
         # Add version byte (0x00 for mainnet P2PKH)
-        versioned = b'\x00' + hash160
+        versioned = b'\x00' + ripemd160_hash
 
         # Checksum
         checksum = hashlib.sha256(hashlib.sha256(versioned).digest()).digest()[:4]
 
         # Encode
         address = base58.b58encode(versioned + checksum).decode('ascii')
-        return address
+
+        return address, (x, y)
 
     def _worker_process(self, worker_id: int, start_key: int, end_key: int):
-        """Worker process to search a key range (optimized)."""
-        keys_checked_total = 0  # Total keys checked (never reset)
-        keys_since_report = 0   # Keys checked since last report
+        """Worker process to search a key range."""
+        keys_checked = 0
         last_report = time.time()
         report_interval = 5.0
 
         current_key = start_key
 
+        # Debug: check first key
+        if worker_id == 0:
+            print(f"Worker {worker_id}: Searching keys {start_key:,} to {end_key:,}")
+            if self.target_type == 'address':
+                print(f"Worker {worker_id}: Target address: {self.target_address}")
+            else:
+                print(f"Worker {worker_id}: Target point: x={self.target_point[0]}, y={self.target_point[1]}")
+
         while current_key < end_key and not self.stop_event.is_set():
             try:
-                # Generate hash160 (fast, no Base58 encoding)
+                # Generate address and pubkey for current private key
                 private_key_bytes = current_key.to_bytes(32, 'big')
+                address, (x, y) = self._private_key_to_address(private_key_bytes)
+
+                # Debug: print first few keys
+                if worker_id == 0 and keys_checked < 3:
+                    if self.target_type == 'address':
+                        print(f"Worker {worker_id}: Key {current_key} -> address {address}")
+                    else:
+                        print(f"Worker {worker_id}: Key {current_key} -> point x={x}")
 
                 # Check if this matches target
                 match_found = False
                 if self.target_type == 'address':
-                    # OPTIMIZED: Compare hash160 directly (20 bytes vs 34-char string)
-                    hash160 = self._private_key_to_hash160(private_key_bytes)
-                    if hash160 == self.target_hash160:
-                        # FOUND! Generate full address for logging
-                        address = self._hash160_to_address(hash160)
-                        print(f"\n🎉 Worker {worker_id}: MATCH at key {current_key}!")
-                        self.result_queue.put({
-                            'found': True,
-                            'private_key': current_key,
-                            'worker_id': worker_id,
-                            'address': address
-                        })
-                        return
+                    if address == self.target_address:
+                        match_found = True
                 else:
-                    # Pubkey target (not used for Puzzle #71, but kept for compatibility)
-                    if USING_COINCURVE:
-                        privkey = CoincurvePrivateKey(private_key_bytes)
-                        pubkey_uncompressed = privkey.public_key.format(compressed=False)
-                        x = int.from_bytes(pubkey_uncompressed[1:33], 'big')
-                        y = int.from_bytes(pubkey_uncompressed[33:65], 'big')
-                    else:
-                        sk = SigningKey.from_string(private_key_bytes, curve=CURVE)
-                        vk = sk.get_verifying_key()
-                        pubkey_point = vk.pubkey.point
-                        x = pubkey_point.x()
-                        y = pubkey_point.y()
-
                     if x == self.target_point[0] and y == self.target_point[1]:
-                        print(f"\n🎉 Worker {worker_id}: MATCH at key {current_key}!")
-                        self.result_queue.put({
-                            'found': True,
-                            'private_key': current_key,
-                            'worker_id': worker_id,
-                            'address': f"Pubkey match: {x:x}"
-                        })
-                        return
+                        match_found = True
+
+                if match_found:
+                    # FOUND!
+                    print(f"\nWorker {worker_id}: MATCH at key {current_key}!")
+                    self.result_queue.put({
+                        'found': True,
+                        'private_key': current_key,
+                        'worker_id': worker_id,
+                        'address': address
+                    })
+                    return
 
                 current_key += 1
-                keys_checked_total += 1
-                keys_since_report += 1
+                keys_checked += 1
 
-                # Report progress (check time every 10000 keys to reduce overhead)
-                if keys_since_report >= 10000:
-                    current_time = time.time()
-                    if current_time - last_report >= report_interval:
-                        self.stats_queue.put({
-                            'worker_id': worker_id,
-                            'keys_checked': keys_since_report,
-                            'current_key': current_key
-                        })
-                        keys_since_report = 0
-                        last_report = current_time
+                # Report progress
+                if time.time() - last_report >= report_interval:
+                    self.stats_queue.put({
+                        'worker_id': worker_id,
+                        'keys_checked': keys_checked,
+                        'current_key': current_key
+                    })
+                    keys_checked = 0
+                    last_report = time.time()
 
             except Exception as e:
-                self.logger.error(f"Worker {worker_id} error at key {current_key}: {e}")
+                print(f"\nWorker {worker_id} error at key {current_key}: {e}")
                 import traceback
                 traceback.print_exc()
                 time.sleep(0.1)
 
-        # Final stats (report any remaining keys)
-        if keys_since_report > 0:
-            self.stats_queue.put({
-                'worker_id': worker_id,
-                'keys_checked': keys_since_report,
-                'current_key': current_key,
-                'final': True
-            })
-
-        self.logger.info(f"Worker {worker_id}: Completed. Checked {keys_checked_total:,} keys from {start_key:,} to {current_key:,}")
+        # Final stats
+        print(f"\nWorker {worker_id}: Exiting. Checked {keys_checked} keys from {start_key} to {current_key}")
+        self.stats_queue.put({
+            'worker_id': worker_id,
+            'keys_checked': keys_checked,
+            'current_key': current_key,
+            'final': True
+        })
 
     def search(self):
         """Run the multi-core search."""
@@ -372,7 +328,6 @@ class PuzzleSearcher:
         print(f"Prize: {self.config.prize_btc} BTC")
         print(f"Status: {self.config.status}")
         print(f"Workers: {self.workers} CPU cores")
-        print(f"Crypto: {'coincurve (libsecp256k1) - FAST' if USING_COINCURVE else 'ecdsa (pure Python) - slow'}")
         print(f"Starting from: {self.start_key:,}")
         print("="*70)
         print()
@@ -397,9 +352,6 @@ class PuzzleSearcher:
             p.start()
             processes.append(p)
 
-            # Small delay to help all workers start successfully
-            time.sleep(0.2)
-
         print(f"Launched {self.workers} worker processes")
         print()
 
@@ -412,41 +364,31 @@ class PuzzleSearcher:
 
         while any(p.is_alive() for p in processes):
             try:
-                # Check for result (with timeout to prevent blocking)
-                results_processed = 0
-                while not self.result_queue.empty() and results_processed < 100:
-                    try:
-                        result = self.result_queue.get(timeout=0.1)
-                        if result.get('found'):
-                            print("\n" + "="*70)
-                            print("🎉 PRIVATE KEY FOUND!")
-                            print("="*70)
-                            print(f"Private Key (decimal): {result['private_key']}")
-                            print(f"Private Key (hex): 0x{result['private_key']:x}")
-                            print(f"Found by worker: {result['worker_id']}")
-                            print("="*70)
+                # Check for result
+                if not self.result_queue.empty():
+                    result = self.result_queue.get()
+                    if result.get('found'):
+                        print("\n" + "="*70)
+                        print("🎉 PRIVATE KEY FOUND!")
+                        print("="*70)
+                        print(f"Private Key (decimal): {result['private_key']}")
+                        print(f"Private Key (hex): 0x{result['private_key']:x}")
+                        print(f"Found by worker: {result['worker_id']}")
+                        print("="*70)
 
-                            # Stop all workers
-                            self.stop_event.set()
-                            for p in processes:
-                                p.join(timeout=2)
+                        # Stop all workers
+                        self.stop_event.set()
+                        for p in processes:
+                            p.join(timeout=2)
 
-                            return result['private_key']
-                        results_processed += 1
-                    except queue.Empty:
-                        break
+                        return result['private_key']
 
-                # Collect stats (with limit to prevent infinite loop)
-                stats_processed = 0
-                while not self.stats_queue.empty() and stats_processed < 1000:
-                    try:
-                        stat = self.stats_queue.get(timeout=0.1)
-                        worker_id = stat['worker_id']
-                        total_keys_checked += stat['keys_checked']
-                        worker_progress[worker_id] = stat['current_key']
-                        stats_processed += 1
-                    except queue.Empty:
-                        break
+                # Collect stats
+                while not self.stats_queue.empty():
+                    stat = self.stats_queue.get()
+                    worker_id = stat['worker_id']
+                    total_keys_checked += stat['keys_checked']
+                    worker_progress[worker_id] = stat['current_key']
 
                 # Display progress
                 elapsed = time.time() - start_time
@@ -484,16 +426,13 @@ class PuzzleSearcher:
                         flush=True
                     )
 
-                # Save checkpoint (check time first, save only if we have data)
-                current_time = time.time()
-                if current_time - last_checkpoint >= checkpoint_interval:
-                    if worker_progress:  # Only save if we have progress data
-                        max_progress_key = max(worker_progress.values())
-                        self._save_checkpoint(max_progress_key, total_keys_checked, elapsed)
-                        last_checkpoint = current_time
+                # Save checkpoint
+                if time.time() - last_checkpoint >= checkpoint_interval:
+                    max_progress_key = max(worker_progress.values())
+                    self._save_checkpoint(max_progress_key, total_keys_checked, elapsed)
+                    last_checkpoint = time.time()
 
-                # Small sleep to prevent busy-waiting and give workers time
-                time.sleep(0.1)
+                time.sleep(0.5)
 
             except KeyboardInterrupt:
                 print("\n\nInterrupted by user")
