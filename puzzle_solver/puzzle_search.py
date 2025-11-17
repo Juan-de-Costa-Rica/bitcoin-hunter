@@ -431,12 +431,18 @@ class PuzzleSearcher:
         processes = []
 
         for i in range(self.workers):
-            worker_start = self.start_key + (i * keys_per_worker)
+            # CRITICAL: Always base worker ranges on range_min, not checkpoint position
+            # This prevents workers from starting beyond range_max when resuming
+            worker_start = self.config.range_min + (i * keys_per_worker)
             worker_end = worker_start + keys_per_worker
 
             if i == self.workers - 1:
                 # Last worker gets any remainder
                 worker_end = self.config.range_max
+
+            # If resuming from checkpoint, skip ahead within this worker's range
+            if self.start_key > worker_start and self.start_key < worker_end:
+                worker_start = self.start_key
 
             p = multiprocessing.Process(
                 target=self._worker_process,
@@ -513,11 +519,16 @@ class PuzzleSearcher:
                 if elapsed > 0:
                     rate = total_keys_checked / elapsed
                     max_progress_key = max(worker_progress.values())
+
+                    # Clamp max_progress_key to valid range to prevent overflow
+                    max_progress_key = min(max_progress_key, self.config.range_max)
+                    max_progress_key = max(max_progress_key, self.config.range_min)
+
                     progress_pct = ((max_progress_key - self.config.range_min) / self.range_size * 100)
 
                     # Estimate time remaining
                     keys_remaining = self.config.range_max - max_progress_key
-                    if rate > 0:
+                    if rate > 0 and keys_remaining > 0:
                         eta_seconds = keys_remaining / rate
                         # Handle astronomically large ETAs
                         if eta_seconds > 999999999999:  # > ~31k years
