@@ -210,7 +210,7 @@ class PuzzleSearcher:
                 'keys_checked': keys_checked,
                 'elapsed_seconds': elapsed,
                 'timestamp': datetime.now().isoformat(),
-                'progress_percent': ((last_key - self.config.range_min) / self.range_size * 100)
+                'progress_percent': (keys_checked / self.range_size * 100)
             }
 
             # Write to temp file first, then atomic rename
@@ -518,13 +518,17 @@ class PuzzleSearcher:
                 elapsed = time.time() - start_time
                 if elapsed > 0:
                     rate = total_keys_checked / elapsed
-                    max_progress_key = max(worker_progress.values())
 
-                    # Clamp max_progress_key to valid range to prevent overflow
-                    max_progress_key = min(max_progress_key, self.config.range_max)
-                    max_progress_key = max(max_progress_key, self.config.range_min)
+                    # Calculate ACTUAL progress based on keys checked, not position
+                    progress_pct = (total_keys_checked / self.range_size * 100)
 
-                    progress_pct = ((max_progress_key - self.config.range_min) / self.range_size * 100)
+                    # For ETA: find furthest key any worker has reached
+                    if worker_progress:
+                        max_progress_key = max(worker_progress.values())
+                        max_progress_key = min(max_progress_key, self.config.range_max)
+                        max_progress_key = max(max_progress_key, self.config.range_min)
+                    else:
+                        max_progress_key = self.start_key
 
                     # Estimate time remaining
                     keys_remaining = self.config.range_max - max_progress_key
