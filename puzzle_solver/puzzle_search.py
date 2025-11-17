@@ -230,6 +230,55 @@ class PuzzleSearcher:
         self.logger.info(f"Received signal {signum}, shutting down...")
         self.stop_event.set()
 
+    def _save_solution(self, private_key: int, worker_id: int, address: str):
+        """Save found solution to multiple files for redundancy."""
+        timestamp = datetime.now().isoformat()
+
+        solution_data = {
+            'puzzle_num': self.config.puzzle_num,
+            'private_key_decimal': str(private_key),
+            'private_key_hex': f"0x{private_key:x}",
+            'address': address,
+            'worker_id': worker_id,
+            'found_at': timestamp,
+            'target_address': self.config.target_address if self.target_type == 'address' else 'pubkey_target'
+        }
+
+        # Save to primary solution file
+        solution_file = f'SOLUTION_FOUND_puzzle{self.config.puzzle_num}.json'
+        try:
+            with open(solution_file, 'w') as f:
+                json.dump(solution_data, f, indent=2)
+            self.logger.info(f"Solution saved to {solution_file}")
+        except Exception as e:
+            self.logger.error(f"Failed to save solution file: {e}")
+
+        # Save timestamped backup
+        backup_file = f'SOLUTION_FOUND_puzzle{self.config.puzzle_num}_{timestamp.replace(":", "-")}.json'
+        try:
+            with open(backup_file, 'w') as f:
+                json.dump(solution_data, f, indent=2)
+            self.logger.info(f"Solution backup saved to {backup_file}")
+        except Exception as e:
+            self.logger.error(f"Failed to save solution backup: {e}")
+
+        # Also save to plain text for easy reading
+        txt_file = f'SOLUTION_FOUND_puzzle{self.config.puzzle_num}.txt'
+        try:
+            with open(txt_file, 'w') as f:
+                f.write("="*70 + "\n")
+                f.write(f"🎉 SOLUTION FOUND FOR PUZZLE #{self.config.puzzle_num}\n")
+                f.write("="*70 + "\n\n")
+                f.write(f"Private Key (decimal): {private_key}\n")
+                f.write(f"Private Key (hex):     0x{private_key:x}\n")
+                f.write(f"Address:               {address}\n")
+                f.write(f"Found by worker:       {worker_id}\n")
+                f.write(f"Found at:              {timestamp}\n")
+                f.write("\n" + "="*70 + "\n")
+            self.logger.info(f"Solution text saved to {txt_file}")
+        except Exception as e:
+            self.logger.error(f"Failed to save solution text: {e}")
+
     def _private_key_to_hash160(self, private_key_bytes):
         """Convert private key to hash160 (fast, no Base58 encoding)."""
         import hashlib
@@ -423,8 +472,19 @@ class PuzzleSearcher:
                             print("="*70)
                             print(f"Private Key (decimal): {result['private_key']}")
                             print(f"Private Key (hex): 0x{result['private_key']:x}")
+                            print(f"Address: {result.get('address', 'N/A')}")
                             print(f"Found by worker: {result['worker_id']}")
                             print("="*70)
+
+                            # CRITICAL: Save solution to files immediately!
+                            self._save_solution(
+                                private_key=result['private_key'],
+                                worker_id=result['worker_id'],
+                                address=result.get('address', 'N/A')
+                            )
+
+                            # Log to main log file
+                            self.logger.info(f"SOLUTION FOUND! Private key: {result['private_key']}, Address: {result.get('address', 'N/A')}")
 
                             # Stop all workers
                             self.stop_event.set()
