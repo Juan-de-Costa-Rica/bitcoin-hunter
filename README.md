@@ -1,71 +1,68 @@
-# Bitcoin Address Hunter
+# Bitcoin Puzzle Solver
 
-Educational project to demonstrate Bitcoin's keyspace security by randomly generating private keys and checking against a local database of funded addresses.
+Educational project exploring Bitcoin's cryptographic security through the [Bitcoin Puzzle Challenge](https://privatekeys.pw/puzzles/bitcoin-puzzle-tx) - a series of increasingly difficult puzzles with real BTC prizes.
 
-## How It Works
+## Puzzle Solver (Main)
 
-1. **Download Address Database** - Get list of all Bitcoin addresses with balances
-2. **Import to SQLite** - Build indexed local database for fast lookups
-3. **Generate Keys** - Create random Bitcoin private keys
-4. **Derive Addresses** - Generate Legacy (P2PKH), SegWit, and Bech32 addresses
-5. **Check Database** - Query local database (no API calls needed)
-6. **Track Stats** - Monitor keys/second, total checked, runtime
+Targets specific Bitcoin puzzles with known address ranges. Currently hunting **Puzzle #71** (7.1 BTC / ~$675k prize).
 
-## Reality Check
+### How It Works
 
-There are 2^160 (~1.4 × 10^48) possible Bitcoin addresses. Even with 50 million funded addresses, the probability of finding one randomly is:
+1. Search a known key range (2^70 to 2^71 for Puzzle #71)
+2. Generate public keys using elliptic curve math
+3. Hash to Bitcoin address format (Hash160)
+4. Compare against target address
 
-**1 in 29,000,000,000,000,000,000,000,000,000,000,000,000,000**
+### Performance
 
-This project demonstrates why Bitcoin's cryptography is secure!
+Optimized to **157,000 keys/sec** on Oracle Cloud free tier (ARM, 3 cores):
 
-## Setup
+| Optimization | Rate | Improvement |
+|--------------|------|-------------|
+| Baseline | 28,630 k/s | - |
+| PublicKey.from_valid_secret() | 56,267 k/s | +96% |
+| Incremental point addition | 140,053 k/s | +389% |
+| Direct FFI to libsecp256k1 | 157,000 k/s | +448% |
+
+See [OPTIMIZATION_REPORT_2025-11-26.md](puzzle_solver/OPTIMIZATION_REPORT_2025-11-26.md) for details.
+
+### Usage
 
 ```bash
-# Install dependencies
-pip3 install -r requirements.txt
+cd puzzle_solver
 
-# Download address database
-python3 download_addresses.py
+# Run solver (3 workers, resume from checkpoint)
+python3 puzzle_search.py 71 -w 3 --resume
 
-# Import to SQLite (this may take a while)
-python3 import_db.py
-
-# Run the scanner
-python3 scanner.py
+# Check stats
+python3 puzzle_stats.py 71
 ```
 
-## Database Sources
+### Odds
 
-- Blockchair daily dumps (updated daily)
-- Bitcoin address balance lists
-- ~40-50 million addresses with transaction history
+After 1 year of 24/7 running: **1 in 238 million** (slightly better than Powerball!)
 
-## Storage Requirements
+Expected time to solve: ~79 million years. But someone has to win eventually.
 
-- Address database: ~10-15GB
-- Logs: minimal (<100MB)
+## Collision Scanner (Archived)
 
-## Performance
+An alternative approach in `collision_scanner/` that generates random keys and checks against a database of all funded Bitcoin addresses.
 
-Expected on Oracle ARM (4 cores, 24GB RAM):
-- Database lookups: 100,000+ per second
-- Key generation: 10,000-50,000 per second
-- Overall: 5,000-10,000 addresses checked per second
+**Why it's archived:** The odds are ~24 quintillion times worse than the puzzle solver. The puzzle constrains the search space to 2^70 keys; random collision hunting searches 2^160.
 
-## Output
+## Requirements
 
-The scanner displays:
-- Keys generated per second
-- Total addresses checked
-- Runtime
-- Any funded addresses found (will never happen via random generation)
+```bash
+pip3 install coincurve
+```
 
 ## Educational Value
 
-This project teaches:
-- Bitcoin private/public key cryptography (secp256k1)
-- Address derivation (P2PKH, P2WPKH, Bech32)
-- The massive scale of Bitcoin's keyspace
-- Database optimization for fast lookups
+- Elliptic curve cryptography (secp256k1)
+- Bitcoin address derivation (Hash160 = RIPEMD160(SHA256(pubkey)))
 - Why Bitcoin is cryptographically secure
+- Performance optimization techniques (FFI, incremental point addition)
+
+## Disclaimer
+
+This is an educational project demonstrating Bitcoin's security. The probability of finding any solution is astronomically low - but the electricity is free on Oracle's free tier, so why not?
