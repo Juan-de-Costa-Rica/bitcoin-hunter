@@ -129,12 +129,55 @@ def format_large_number(n):
         return f"{n/1_000_000_000_000_000_000:.2f}Qi"
 
 
+def check_for_solution(puzzle_num):
+    """Check if a solution has been found."""
+    solution_file = f"SOLUTION_FOUND_puzzle{puzzle_num}.json"
+    txt_file = f"SOLUTION_FOUND_puzzle{puzzle_num}.txt"
+
+    if os.path.exists(solution_file):
+        try:
+            with open(solution_file, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+
+    if os.path.exists(txt_file):
+        # At least the txt file exists
+        return {'found': True, 'file': txt_file}
+
+    return None
+
+
 def display_stats(puzzle_num):
     """Display comprehensive puzzle solving statistics."""
     print("="*70)
     print(f"Bitcoin Puzzle #{puzzle_num} Solver - Statistics")
     print("="*70)
     print()
+
+    # CHECK FOR SOLUTION FIRST!
+    solution = check_for_solution(puzzle_num)
+    if solution:
+        print("🎉" * 35)
+        print("\n" + " "*15 + "🚨 SOLUTION FOUND! 🚨")
+        print("\n" + "🎉" * 35)
+        print()
+
+        if solution.get('private_key_decimal'):
+            print("="*70)
+            print(f"Private Key (decimal): {solution['private_key_decimal']}")
+            print(f"Private Key (hex):     {solution['private_key_hex']}")
+            print(f"Address:               {solution.get('address', 'N/A')}")
+            print(f"Found by worker:       {solution.get('worker_id', 'N/A')}")
+            print(f"Found at:              {solution.get('found_at', 'Unknown')}")
+            print("="*70)
+        else:
+            print(f"Solution saved in: {solution.get('file', 'SOLUTION_FOUND files')}")
+
+        print()
+        print("🎉" * 35)
+        print()
+        return
 
     # Load checkpoint
     checkpoint = load_checkpoint(puzzle_num)

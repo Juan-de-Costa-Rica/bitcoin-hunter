@@ -210,7 +210,7 @@ class PuzzleSearcher:
                 'keys_checked': keys_checked,
                 'elapsed_seconds': elapsed,
                 'timestamp': datetime.now().isoformat(),
-                'progress_percent': ((last_key - self.config.range_min) / self.range_size * 100)
+                'progress_percent': (keys_checked / self.range_size * 100)
             }
 
             # Write to temp file first, then atomic rename
@@ -229,6 +229,55 @@ class PuzzleSearcher:
         """Handle shutdown signals."""
         self.logger.info(f"Received signal {signum}, shutting down...")
         self.stop_event.set()
+
+    def _save_solution(self, private_key: int, worker_id: int, address: str):
+        """Save found solution to multiple files for redundancy."""
+        timestamp = datetime.now().isoformat()
+
+        solution_data = {
+            'puzzle_num': self.config.puzzle_num,
+            'private_key_decimal': str(private_key),
+            'private_key_hex': f"0x{private_key:x}",
+            'address': address,
+            'worker_id': worker_id,
+            'found_at': timestamp,
+            'target_address': self.config.target_address if self.target_type == 'address' else 'pubkey_target'
+        }
+
+        # Save to primary solution file
+        solution_file = f'SOLUTION_FOUND_puzzle{self.config.puzzle_num}.json'
+        try:
+            with open(solution_file, 'w') as f:
+                json.dump(solution_data, f, indent=2)
+            self.logger.info(f"Solution saved to {solution_file}")
+        except Exception as e:
+            self.logger.error(f"Failed to save solution file: {e}")
+
+        # Save timestamped backup
+        backup_file = f'SOLUTION_FOUND_puzzle{self.config.puzzle_num}_{timestamp.replace(":", "-")}.json'
+        try:
+            with open(backup_file, 'w') as f:
+                json.dump(solution_data, f, indent=2)
+            self.logger.info(f"Solution backup saved to {backup_file}")
+        except Exception as e:
+            self.logger.error(f"Failed to save solution backup: {e}")
+
+        # Also save to plain text for easy reading
+        txt_file = f'SOLUTION_FOUND_puzzle{self.config.puzzle_num}.txt'
+        try:
+            with open(txt_file, 'w') as f:
+                f.write("="*70 + "\n")
+                f.write(f"🎉 SOLUTION FOUND FOR PUZZLE #{self.config.puzzle_num}\n")
+                f.write("="*70 + "\n\n")
+                f.write(f"Private Key (decimal): {private_key}\n")
+                f.write(f"Private Key (hex):     0x{private_key:x}\n")
+                f.write(f"Address:               {address}\n")
+                f.write(f"Found by worker:       {worker_id}\n")
+                f.write(f"Found at:              {timestamp}\n")
+                f.write("\n" + "="*70 + "\n")
+            self.logger.info(f"Solution text saved to {txt_file}")
+        except Exception as e:
+            self.logger.error(f"Failed to save solution text: {e}")
 
     def _private_key_to_hash160(self, private_key_bytes):
         """Convert private key to hash160 (fast, no Base58 encoding)."""
@@ -382,12 +431,18 @@ class PuzzleSearcher:
         processes = []
 
         for i in range(self.workers):
-            worker_start = self.start_key + (i * keys_per_worker)
+            # CRITICAL: Always base worker ranges on range_min, not checkpoint position
+            # This prevents workers from starting beyond range_max when resuming
+            worker_start = self.config.range_min + (i * keys_per_worker)
             worker_end = worker_start + keys_per_worker
 
             if i == self.workers - 1:
                 # Last worker gets any remainder
                 worker_end = self.config.range_max
+
+            # If resuming from checkpoint, skip ahead within this worker's range
+            if self.start_key > worker_start and self.start_key < worker_end:
+                worker_start = self.start_key
 
             p = multiprocessing.Process(
                 target=self._worker_process,
@@ -423,8 +478,19 @@ class PuzzleSearcher:
                             print("="*70)
                             print(f"Private Key (decimal): {result['private_key']}")
                             print(f"Private Key (hex): 0x{result['private_key']:x}")
+                            print(f"Address: {result.get('address', 'N/A')}")
                             print(f"Found by worker: {result['worker_id']}")
                             print("="*70)
+
+                            # CRITICAL: Save solution to files immediately!
+                            self._save_solution(
+                                private_key=result['private_key'],
+                                worker_id=result['worker_id'],
+                                address=result.get('address', 'N/A')
+                            )
+
+                            # Log to main log file
+                            self.logger.info(f"SOLUTION FOUND! Private key: {result['private_key']}, Address: {result.get('address', 'N/A')}")
 
                             # Stop all workers
                             self.stop_event.set()
@@ -452,12 +518,21 @@ class PuzzleSearcher:
                 elapsed = time.time() - start_time
                 if elapsed > 0:
                     rate = total_keys_checked / elapsed
-                    max_progress_key = max(worker_progress.values())
-                    progress_pct = ((max_progress_key - self.config.range_min) / self.range_size * 100)
+
+                    # Calculate ACTUAL progress based on keys checked, not position
+                    progress_pct = (total_keys_checked / self.range_size * 100)
+
+                    # For ETA: find furthest key any worker has reached
+                    if worker_progress:
+                        max_progress_key = max(worker_progress.values())
+                        max_progress_key = min(max_progress_key, self.config.range_max)
+                        max_progress_key = max(max_progress_key, self.config.range_min)
+                    else:
+                        max_progress_key = self.start_key
 
                     # Estimate time remaining
                     keys_remaining = self.config.range_max - max_progress_key
-                    if rate > 0:
+                    if rate > 0 and keys_remaining > 0:
                         eta_seconds = keys_remaining / rate
                         # Handle astronomically large ETAs
                         if eta_seconds > 999999999999:  # > ~31k years
