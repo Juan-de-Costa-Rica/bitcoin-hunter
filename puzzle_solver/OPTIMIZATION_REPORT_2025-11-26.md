@@ -109,3 +109,46 @@ The following were tested but not implemented:
 | Single core | ~9,500 k/s | ~19,000 k/s | +100% |
 | 3 workers | 28,630 k/s | 56,267 k/s | +96.5% |
 
+
+---
+
+## Update: Incremental Point Addition (Major Discovery)
+
+### The Insight
+
+Profiling revealed **95.9% of CPU time** is spent on elliptic curve scalar multiplication ().
+
+When searching consecutive keys , we can exploit this:
+-  (expensive scalar multiplication)
+-  (cheap point addition!)
+
+Point addition is ~100x faster than scalar multiplication.
+
+### Implementation
+
+```python
+# Initialize once
+current_pubkey = PublicKey.from_valid_secret(start_key.to_bytes(32, 'big'))
+
+# For each iteration
+pubkey_compressed = current_pubkey.format(compressed=True)
+# ... compute hash160 and check ...
+current_pubkey.add(ONE, update=True)  # P(k+1) = P(k) + 1*G
+```
+
+### Results
+
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Single core | ~19,000 k/s | ~48,600 k/s | +156% |
+| 3 workers | 56,267 k/s | 140,053 k/s | +149% |
+
+### Total Optimization Summary
+
+| Version | 3-Worker Rate | vs Baseline |
+|---------|---------------|-------------|
+| Original (PrivateKey approach) | 28,630 k/s | baseline |
+| + PublicKey.from_valid_secret | 56,267 k/s | +96% |
+| + Incremental point addition | 140,053 k/s | **+389%** |
+
+**Final result: 4.9x faster than baseline, with no additional hardware.**
