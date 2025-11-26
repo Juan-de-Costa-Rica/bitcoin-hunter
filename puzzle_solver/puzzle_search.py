@@ -334,10 +334,18 @@ class PuzzleSearcher:
         keys_since_report = 0   # Keys checked since last report
         last_report = time.time()
         report_interval = 5.0
+        stop_check_counter = 0  # Check stop_event every N iterations (reduces IPC overhead)
+        STOP_CHECK_INTERVAL = 1000  # Check stop signal every 1000 keys (~3.4% speedup)
 
         current_key = start_key
 
-        while current_key < end_key and not self.stop_event.is_set():
+        while current_key < end_key:
+            # Check stop signal periodically (not every iteration - reduces overhead)
+            stop_check_counter += 1
+            if stop_check_counter >= STOP_CHECK_INTERVAL:
+                stop_check_counter = 0
+                if self.stop_event.is_set():
+                    break
             try:
                 # Generate hash160 (fast, no Base58 encoding)
                 private_key_bytes = current_key.to_bytes(32, 'big')
