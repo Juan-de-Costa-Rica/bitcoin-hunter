@@ -32,3 +32,11 @@ found_keys.txt
 # OS
 .DS_Store
 Thumbs.db
+
+# Backup files
+*.backup
+*.backup-*
+*.before-*
+
+# Checkpoint files (runtime state)
+*checkpoint*.json
