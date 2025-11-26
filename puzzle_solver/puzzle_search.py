@@ -329,45 +329,78 @@ class PuzzleSearcher:
         return address
 
     def _worker_process(self, worker_id: int, start_key: int, end_key: int):
-        """Worker process to search a key range (optimized)."""
-        keys_checked_total = 0  # Total keys checked (never reset)
-        keys_since_report = 0   # Keys checked since last report
+        """Worker process to search a key range.
+        
+        OPTIMIZED: Uses incremental point addition instead of scalar multiplication.
+        - First key: Full scalar mult P = k*G (once)
+        - Subsequent keys: Point addition P(k+1) = P(k) + G (2.5x faster)
+        """
+        import hashlib
+        
+        keys_checked_total = 0
+        keys_since_report = 0
         last_report = time.time()
         report_interval = 5.0
-        stop_check_counter = 0  # Check stop_event every N iterations (reduces IPC overhead)
-        STOP_CHECK_INTERVAL = 1000  # Check stop signal every 1000 keys (~3.4% speedup)
-
+        stop_check_counter = 0
+        STOP_CHECK_INTERVAL = 1000
+        
+        # Pre-cache functions for speed
+        _sha256 = hashlib.sha256
+        _ripemd160 = lambda data: hashlib.new('ripemd160', data)
+        
         current_key = start_key
-
+        
+        # OPTIMIZATION: Initialize public key once, then use incremental addition
+        if USING_COINCURVE:
+            ONE = (1).to_bytes(32, 'big')  # Scalar 1 for incrementing
+            current_pubkey = CoincurvePublicKey.from_valid_secret(current_key.to_bytes(32, 'big'))
+        
         while current_key < end_key:
-            # Check stop signal periodically (not every iteration - reduces overhead)
+            # Check stop signal periodically
             stop_check_counter += 1
             if stop_check_counter >= STOP_CHECK_INTERVAL:
                 stop_check_counter = 0
                 if self.stop_event.is_set():
                     break
+            
             try:
-                # Generate hash160 (fast, no Base58 encoding)
-                private_key_bytes = current_key.to_bytes(32, 'big')
-
-                # Check if this matches target
-                match_found = False
                 if self.target_type == 'address':
-                    # OPTIMIZED: Compare hash160 directly (20 bytes vs 34-char string)
-                    hash160 = self._private_key_to_hash160(private_key_bytes)
-                    if hash160 == self.target_hash160:
-                        # FOUND! Generate full address for logging
-                        address = self._hash160_to_address(hash160)
-                        print(f"\n🎉 Worker {worker_id}: MATCH at key {current_key}!")
-                        self.result_queue.put({
-                            'found': True,
-                            'private_key': current_key,
-                            'worker_id': worker_id,
-                            'address': address
-                        })
-                        return
+                    if USING_COINCURVE:
+                        # FAST PATH: Use pre-computed public key
+                        pubkey_compressed = current_pubkey.format(compressed=True)
+                        sha256_hash = _sha256(pubkey_compressed).digest()
+                        hash160 = _ripemd160(sha256_hash).digest()
+                        
+                        if hash160 == self.target_hash160:
+                            address = self._hash160_to_address(hash160)
+                            print(f"\n Worker {worker_id}: MATCH at key {current_key}!")
+                            self.result_queue.put({
+                                'found': True,
+                                'private_key': current_key,
+                                'worker_id': worker_id,
+                                'address': address
+                            })
+                            return
+                        
+                        # INCREMENT: P(k+1) = P(k) + 1*G (fast point addition)
+                        current_pubkey.add(ONE, update=True)
+                    else:
+                        # Fallback for non-coincurve
+                        private_key_bytes = current_key.to_bytes(32, 'big')
+                        hash160 = self._private_key_to_hash160(private_key_bytes)
+                        if hash160 == self.target_hash160:
+                            address = self._hash160_to_address(hash160)
+                            print(f"\n Worker {worker_id}: MATCH at key {current_key}!")
+                            self.result_queue.put({
+                                'found': True,
+                                'private_key': current_key,
+                                'worker_id': worker_id,
+                                'address': address
+                            })
+                            return
                 else:
-                    # Pubkey target (not used for Puzzle #71, but kept for compatibility)
+                    # Pubkey target (not used for Puzzle #71)
+                    private_key_bytes = current_key.to_bytes(32, 'big')
                     if USING_COINCURVE:
                         privkey = CoincurvePrivateKey(private_key_bytes)
                         pubkey_uncompressed = privkey.public_key.format(compressed=False)
@@ -381,7 +414,7 @@ class PuzzleSearcher:
                         y = pubkey_point.y()
 
                     if x == self.target_point[0] and y == self.target_point[1]:
-                        print(f"\n🎉 Worker {worker_id}: MATCH at key {current_key}!")
+                        print(f"\n Worker {worker_id}: MATCH at key {current_key}!")
                         self.result_queue.put({
                             'found': True,
                             'private_key': current_key,
@@ -394,7 +427,6 @@ class PuzzleSearcher:
                 keys_checked_total += 1
                 keys_since_report += 1
 
-                # Report progress (check time every 10000 keys to reduce overhead)
                 if keys_since_report >= 10000:
                     current_time = time.time()
                     if current_time - last_report >= report_interval:
@@ -410,9 +442,11 @@ class PuzzleSearcher:
                 self.logger.error(f"Worker {worker_id} error at key {current_key}: {e}")
                 import traceback
                 traceback.print_exc()
+                # On error, re-sync the pubkey from scalar mult
+                if USING_COINCURVE and self.target_type == 'address':
+                    current_pubkey = CoincurvePublicKey.from_valid_secret(current_key.to_bytes(32, 'big'))
                 time.sleep(0.1)
 
-        # Final stats (report any remaining keys)
         if keys_since_report > 0:
             self.stats_queue.put({
                 'worker_id': worker_id,
