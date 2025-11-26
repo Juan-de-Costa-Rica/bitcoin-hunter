@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import base58
 try:
-    from coincurve import PrivateKey as CoincurvePrivateKey
+    from coincurve import PrivateKey as CoincurvePrivateKey, PublicKey as CoincurvePublicKey
     USING_COINCURVE = True
 except ImportError:
     USING_COINCURVE = False
@@ -280,13 +280,17 @@ class PuzzleSearcher:
             self.logger.error(f"Failed to save solution text: {e}")
 
     def _private_key_to_hash160(self, private_key_bytes):
-        """Convert private key to hash160 (fast, no Base58 encoding)."""
+        """Convert private key to hash160 (fast, no Base58 encoding).
+        
+        Optimized: Uses PublicKey.from_valid_secret() which is ~2x faster
+        than creating a PrivateKey object since we only need the public key.
+        """
         import hashlib
 
         if USING_COINCURVE:
-            # Fast path: Use coincurve (libsecp256k1 C library)
-            privkey = CoincurvePrivateKey(private_key_bytes)
-            pubkey_compressed = privkey.public_key.format(compressed=True)
+            # Fast path: Use PublicKey.from_valid_secret (2x faster than PrivateKey)
+            # We only need the public key, not the private key object
+            pubkey_compressed = CoincurvePublicKey.from_valid_secret(private_key_bytes).format(compressed=True)
         else:
             # Fallback: Use ecdsa (pure Python)
             sk = SigningKey.from_string(private_key_bytes, curve=CURVE)
