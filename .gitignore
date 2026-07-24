@@ -40,3 +40,10 @@ Thumbs.db
 
 # Checkpoint files (runtime state)
 *checkpoint*.json
+*checkpoint*.txt
+
+# keyhunt runner runtime state
+keyhunt_runner/last_chunk.out
+keyhunt_runner/hunt71.log
+keyhunt_runner/SOLUTION_*.txt
+keyhunt_runner/KEYFOUNDKEYFOUND.txt
