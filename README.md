@@ -22,6 +22,47 @@ runs [albertobsd/keyhunt](https://github.com/albertobsd/keyhunt) (C + GMP,
 - Cron `@reboot` relaunches the wrapper; solutions land in
   `SOLUTION_puzzle71_<ts>.txt` (runner dir + `$HOME`)
 
+### Usage
+
+```bash
+cd keyhunt_runner
+
+# Start the hunt (backgrounded; resumes from checkpoint71.txt)
+nohup ./hunt71.sh >/dev/null 2>&1 &
+
+# Check frontier, rate, and process health
+./status71.sh
+```
+
+### Odds
+
+At 1.81 Mkeys/s, one year of 24/7 searching covers 57.1 trillion keys out of
+the 2^70 keyspace — about **1 in 20.7 million** odds of finding the key
+(4.84 × 10⁻⁸). That is ~14x better than a single Powerball ticket
+(1 in 292 million), and 11.5x better than the retired Python engine's
+1-in-238-million. Expected time to solve at this rate: ~20.7 million years.
+
+The odds are what they are because the keyspace is enormous, not because the
+engine is slow. No CPU optimization meaningfully changes the outcome — this
+runs because the Oracle free tier costs nothing.
+
+### Monitoring / notifications
+
+Two Uptime Kuma monitors on debian-langosta (both wired to the Telegram
+notification), so nobody has to babysit the box:
+
+- **`puzzle71-heartbeat`** (id 25, push) — the hunt pings Kuma every 5 min
+  (`hb()` in `hunt71.sh`, reaching Kuma over Tailscale via `curl --resolve`).
+  If the pings stop for ~30 min — crash, reboot, **or a solve** (keyhunt exits
+  on a win) — Kuma flips DOWN and alerts. On a confirmed solve the wrapper also
+  sends an explicit DOWN ping with the private key in the message.
+- **`puzzle71-prize-balance`** (id 26, keyword) — Kuma polls
+  `blockchain.info/q/addressbalance/<prize-addr>` every 5 min with the current
+  balance as the keyword. The moment anyone sweeps the address (us after a win,
+  or a stranger who solves it first), the keyword vanishes and Kuma alerts.
+
+No bespoke watcher script — both are stock Kuma monitors.
+
 ## Puzzle Solver (Python, retired 2026-07)
 
 Targets specific Bitcoin puzzles with known address ranges. Currently hunting **Puzzle #71** (7.1 BTC / ~$675k prize).
@@ -58,11 +99,10 @@ python3 puzzle_search.py 71 -w 3 --resume
 python3 puzzle_stats.py 71
 ```
 
-### Odds
+### Odds (at the retired 157k/s rate)
 
-After 1 year of 24/7 running: **1 in 238 million** (slightly better than Powerball!)
-
-Expected time to solve: ~79 million years. But someone has to win eventually.
+After 1 year of 24/7 running: **1 in 238 million**. Superseded by the keyhunt
+engine above (1 in 20.7 million/year). Kept here for historical context.
 
 ## Collision Scanner (Archived)
 
