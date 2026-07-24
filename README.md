@@ -6,19 +6,22 @@ Educational project exploring Bitcoin's cryptographic security through the [Bitc
 
 The Python solver below has been retired as the production engine. The hunt now
 runs [albertobsd/keyhunt](https://github.com/albertobsd/keyhunt) (C + GMP,
-`legacy` build for ARM) driven by `keyhunt_runner/hunt71.sh`:
+`legacy` build for ARM) in **random mode** over the full `[2^70, 2^71)` range,
+driven by `keyhunt_runner/hunt71.sh`:
 
 - **1.81 Mkeys/s sustained on 3 cores** — 11.5x the Python solver's 157k/s
   (keyhunt's own stats line double-counts; the 1.81M figure is wall-clock
   verified: 300M-key range in 166s)
 - Correctness validated: found solved Puzzle #66's known key, plus 3 planted
-  keys at start/middle/end of a test range (no coverage gaps; final block
-  rounds up, never truncates)
-- Chunked checkpointing: `checkpoint71.txt` advances only after a ~2h chunk
-  completes, fixing the old resume bug where 2 of 3 workers lost all progress
-  on every reboot (checkpoint stored only the global max key)
-- Started 2026-07-24 from the Python era's frontier `0x6aaaaaab326f85a1bb`
-- `keyhunt_runner/status71.sh` prints frontier, rate, and process health
+  keys at start/middle/end of a test range (no coverage gaps)
+- **Random search order (`-R -b 71`), by choice.** The key was placed
+  uniformly at random and a solo CPU covers a negligible slice either way, so
+  sequential vs random is EV-identical. Random spreads coverage across the
+  whole range instead of grinding the crowded low end that every default-config
+  searcher starts on. It also needs no checkpoint — there's no contiguous
+  progress to resume; keyhunt just keeps sampling until it finds the key or is
+  killed, and the wrapper only restarts it if it dies.
+  (The retired sequential checkpoint is kept as `checkpoint71.txt.retired-sequential`.)
 - Cron `@reboot` relaunches the wrapper; solutions land in
   `SOLUTION_puzzle71_<ts>.txt` (runner dir + `$HOME`)
 

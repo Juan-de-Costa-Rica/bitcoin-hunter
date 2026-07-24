@@ -1,20 +1,16 @@
 #!/bin/bash
-# Quick status for the puzzle 71 hunt.
+# Health check for the puzzle 71 random-mode hunt (run on Oracle).
+# Random mode has no contiguous progress to report; what matters is that
+# keyhunt is alive, its rate, and that no solution/steal has fired.
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
-pos=$(cat checkpoint71.txt)
-python3 - "$pos" <<'EOF'
-import sys
-pos = int(sys.argv[1], 16)
-lo, hi = 2**70, 2**71
-era_start = 0x6aaaaaab326f85a1bb  # keyhunt era began here, 2026-07-24
-print(f"frontier:            0x{pos:x}")
-print(f"position in range:   {(pos-lo)/(hi-lo)*100:.4f}% of [2^70, 2^71)")
-scanned = pos - era_start
-print(f"scanned (keyhunt):   {scanned:,} keys ({scanned/(hi-lo)*100:.6f}% of range)")
-print(f"days remaining @1.8M/s: {(hi-pos)/1_810_000/86400:,.0f}")
-EOF
-echo "--- last 3 chunks:"
-tail -3 hunt71.log 2>/dev/null
-echo "--- process:"
-pgrep -af "keyhunt -m address" || echo "NOT RUNNING"
+echo "=== process ==="
+pgrep -af "keyhunt -m address -f puzzle71" | grep -v pgrep || echo "NOT RUNNING"
+echo "=== rate (last stats line) ==="
+grep -oE "\(.* keys/s\)" last_chunk.out 2>/dev/null | tail -1 || echo "no stats yet"
+echo "=== solutions on disk ==="
+ls -1 SOLUTION_puzzle71_*.txt /home/opc/SOLUTION_puzzle71_*.txt 2>/dev/null || echo "none (good — still hunting)"
+echo "=== recent wrapper log ==="
+tail -3 hunt71.log 2>/dev/null || echo "(no log entries — normal until a restart/solve)"
+echo "=== load ==="
+uptime | grep -o "load average.*"
