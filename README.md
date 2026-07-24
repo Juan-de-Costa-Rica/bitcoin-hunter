@@ -2,7 +2,27 @@
 
 Educational project exploring Bitcoin's cryptographic security through the [Bitcoin Puzzle Challenge](https://privatekeys.pw/puzzles/bitcoin-puzzle-tx) - a series of increasingly difficult puzzles with real BTC prizes.
 
-## Puzzle Solver (Main)
+## Current Engine: keyhunt (2026-07)
+
+The Python solver below has been retired as the production engine. The hunt now
+runs [albertobsd/keyhunt](https://github.com/albertobsd/keyhunt) (C + GMP,
+`legacy` build for ARM) driven by `keyhunt_runner/hunt71.sh`:
+
+- **1.81 Mkeys/s sustained on 3 cores** — 11.5x the Python solver's 157k/s
+  (keyhunt's own stats line double-counts; the 1.81M figure is wall-clock
+  verified: 300M-key range in 166s)
+- Correctness validated: found solved Puzzle #66's known key, plus 3 planted
+  keys at start/middle/end of a test range (no coverage gaps; final block
+  rounds up, never truncates)
+- Chunked checkpointing: `checkpoint71.txt` advances only after a ~2h chunk
+  completes, fixing the old resume bug where 2 of 3 workers lost all progress
+  on every reboot (checkpoint stored only the global max key)
+- Started 2026-07-24 from the Python era's frontier `0x6aaaaaab326f85a1bb`
+- `keyhunt_runner/status71.sh` prints frontier, rate, and process health
+- Cron `@reboot` relaunches the wrapper; solutions land in
+  `SOLUTION_puzzle71_<ts>.txt` (runner dir + `$HOME`)
+
+## Puzzle Solver (Python, retired 2026-07)
 
 Targets specific Bitcoin puzzles with known address ranges. Currently hunting **Puzzle #71** (7.1 BTC / ~$675k prize).
 
