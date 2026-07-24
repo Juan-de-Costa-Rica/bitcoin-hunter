@@ -10,7 +10,7 @@
 # finds the key or is killed; this wrapper only restarts it if it dies.
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
-KEYHUNT=/home/opc/keyhunt/keyhunt
+KEYHUNT=/home/opc/keyhunt-arm/keyhunt
 THREADS=3                    # keep 1 of 4 cores free for Caddy etc.
 NSEQ=0x10000000              # sequential run length after each random hop
 cd "$DIR"

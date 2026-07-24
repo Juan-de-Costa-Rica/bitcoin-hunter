@@ -1,0 +1,54 @@
+--- /tmp/pristine_Int.h	2026-07-24 07:33:58.114754986 -0600
++++ secp256k1/Int.h	2026-07-24 07:08:06.920036757 -0600
+@@ -195,7 +195,50 @@
+ 
+ // Inline routines
+ 
+-#ifndef _WIN64
++#if defined(__aarch64__) || defined(__arm__) || defined(__ARM_ARCH)
++
++// ARM (aarch64) port of the x86-64 scalar intrinsics used by this Int class.
++// Semantics match Intel's intrinsics exactly, including positional argument
++// order, because callers invoke them positionally. Implemented with the
++// compiler's native 128-bit integer (GCC/Clang __int128) so the codegen is
++// plain 64-bit mul/adds/adcs on aarch64 — no libgmp, no x86 asm.
++
++// {*h:return} = a * b   (full 64x64 -> 128 product)
++static uint64_t inline _umul128(uint64_t a, uint64_t b, uint64_t *h) {
++  unsigned __int128 r = (unsigned __int128)a * (unsigned __int128)b;
++  *h = (uint64_t)(r >> 64);
++  return (uint64_t)r;
++}
++
++// low 64 bits of ({hi:lo} >> n), n in [0,63].  lo = first arg, hi = second.
++static uint64_t inline __shiftright128(uint64_t lo, uint64_t hi, unsigned char n) {
++  return (uint64_t)((((unsigned __int128)hi << 64) | lo) >> n);
++}
++
++// high 64 bits of ({hi:lo} << n), n in [0,63].  lo = first arg, hi = second.
++static uint64_t inline __shiftleft128(uint64_t lo, uint64_t hi, unsigned char n) {
++  return (uint64_t)(((((unsigned __int128)hi << 64) | lo) << n) >> 64);
++}
++
++// *d = a + b + carry_in ; returns carry_out (0/1). Matches _addcarry_u64.
++static inline unsigned char _addcarry_u64(unsigned char carry, uint64_t a,
++                                          uint64_t b, uint64_t *d) {
++  unsigned __int128 s = (unsigned __int128)a + (unsigned __int128)b + carry;
++  *d = (uint64_t)s;
++  return (unsigned char)(s >> 64);
++}
++
++// *d = a - b - borrow_in ; returns borrow_out (0/1). Matches _subborrow_u64.
++static inline unsigned char _subborrow_u64(unsigned char borrow, uint64_t a,
++                                           uint64_t b, uint64_t *d) {
++  unsigned __int128 s = (unsigned __int128)a - (unsigned __int128)b - borrow;
++  *d = (uint64_t)s;
++  return (unsigned char)((s >> 64) & 1);
++}
++
++#define _byteswap_uint64 __builtin_bswap64
++
++#elif !defined(_WIN64)
+ 
+ // Missing intrinsics
+ static uint64_t inline _umul128(uint64_t a, uint64_t b, uint64_t *h) {

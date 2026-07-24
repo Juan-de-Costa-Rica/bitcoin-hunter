@@ -2,16 +2,22 @@
 
 Educational project exploring Bitcoin's cryptographic security through the [Bitcoin Puzzle Challenge](https://privatekeys.pw/puzzles/bitcoin-puzzle-tx) - a series of increasingly difficult puzzles with real BTC prizes.
 
-## Current Engine: keyhunt (2026-07)
+## Current Engine: keyhunt, ARM NEON fast build (2026-07)
 
 The Python solver below has been retired as the production engine. The hunt now
-runs [albertobsd/keyhunt](https://github.com/albertobsd/keyhunt) (C + GMP,
-`legacy` build for ARM) in **random mode** over the full `[2^70, 2^71)` range,
-driven by `keyhunt_runner/hunt71.sh`:
+runs [albertobsd/keyhunt](https://github.com/albertobsd/keyhunt) in **random
+mode** over the full `[2^70, 2^71)` range, driven by
+`keyhunt_runner/hunt71.sh`.
 
-- **1.81 Mkeys/s sustained on 3 cores** — 11.5x the Python solver's 157k/s
-  (keyhunt's own stats line double-counts; the 1.81M figure is wall-clock
-  verified: 300M-key range in 166s)
+As of 2026-07-24 it uses the **fast `default` engine ported to aarch64/NEON**
+(custom secp256k1 field math + 4-way SIMD hashing), replacing the slower GMP
+`legacy` build. The port, patches, validation and benchmark live in
+[`keyhunt_arm_port/`](keyhunt_arm_port/) — measured **1.80x** over legacy
+(~3.3 Mkeys/s wall-clock on 3 cores vs the prior 1.81).
+
+- **~3.3 Mkeys/s sustained on 3 cores** (ARM NEON fast build; 1.80x the legacy
+  1.81 Mkeys/s). keyhunt's own stats line double-counts ~2x; trust wall-clock.
+  The legacy 1.81M was wall-clock verified (300M-key range in 166s).
 - Correctness validated: found solved Puzzle #66's known key, plus 3 planted
   keys at start/middle/end of a test range (no coverage gaps)
 - **Random search order (`-R -b 71`), by choice.** The key was placed

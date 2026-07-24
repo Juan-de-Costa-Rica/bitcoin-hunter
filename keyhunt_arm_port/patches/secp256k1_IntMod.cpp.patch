@@ -1,0 +1,12 @@
+--- /tmp/pristine_IntMod.cpp	2026-07-24 07:34:01.910760831 -0600
++++ secp256k1/IntMod.cpp	2026-07-24 07:08:25.840088159 -0600
+@@ -16,7 +16,9 @@
+ */
+ 
+ #include "Int.h"
++#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
+ #include <emmintrin.h>
++#endif
+ #include <string.h>
+ 
+ #define MAX(x,y) (((x)>(y))?(x):(y))

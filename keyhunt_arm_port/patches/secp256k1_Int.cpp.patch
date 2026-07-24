@@ -1,0 +1,12 @@
+--- /tmp/pristine_Int.cpp	2026-07-24 07:34:00.010757904 -0600
++++ secp256k1/Int.cpp	2026-07-24 07:08:16.488062794 -0600
+@@ -21,7 +21,9 @@
+ #include <cstdlib>
+ #include <cstring>
+ #include <cctype>
++#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
+ #include <emmintrin.h>
++#endif
+ 
+ #define MAX(x,y) (((x)>(y))?(x):(y))
+ #define MIN(x,y) (((x)<(y))?(x):(y))

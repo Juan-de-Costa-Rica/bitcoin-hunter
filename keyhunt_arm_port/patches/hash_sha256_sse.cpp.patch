@@ -1,0 +1,15 @@
+--- /tmp/pristine_sha256_sse.cpp	2026-07-24 07:34:07.578769577 -0600
++++ hash/sha256_sse.cpp	2026-07-24 07:08:34.416111347 -0600
+@@ -16,7 +16,12 @@
+ */
+ 
+ #include "sha256.h"
++#if defined(__aarch64__) || defined(__arm__) || defined(__ARM_ARCH)
++#define SSE2NEON_SUPPRESS_WARNINGS
++#include "sse2neon.h"
++#else
+ #include <immintrin.h>
++#endif
+ #include <string.h>
+ #include <stdint.h>
+ 

@@ -1,0 +1,15 @@
+--- /tmp/pristine_ripemd160_sse.cpp	2026-07-24 07:34:09.458772484 -0600
++++ hash/ripemd160_sse.cpp	2026-07-24 07:08:34.440111412 -0600
+@@ -17,7 +17,12 @@
+ 
+ #include "ripemd160.h"
+ #include <string.h>
++#if defined(__aarch64__) || defined(__arm__) || defined(__ARM_ARCH)
++#define SSE2NEON_SUPPRESS_WARNINGS
++#include "sse2neon.h"
++#else
+ #include <immintrin.h>
++#endif
+ 
+ // Internal SSE RIPEMD-160 implementation.
+ namespace ripemd160sse {
