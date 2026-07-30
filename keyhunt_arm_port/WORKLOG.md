@@ -55,3 +55,18 @@ Re-prioritized levers:
 Strategic note: hardware SHA was the one lever with a real HW backing (3x).
 Everything left is software-SIMD-bound with small end-to-end payoff. Given
 P(solve/yr)=1-in-8.4M, further micro-opt is exercise, not expected value.
+
+## 2026-07-30 — RIPEMD-160 lever: tried, NOT deployed (negative result)
+Specialized `ripemd160opt_32`: hardcode the 8 constant padding words (w8=0x80,
+w9-13=0, w14=0x100, w15=0) instead of per-lane LOADW gathers, drop the dead
+padding memcpys, keep all 160 rounds verbatim. Let -Ofast fold the +0/+const adds.
+- Correctness: byte-identical to deployed ripemd160sse_32 over 4096x4 random blocks.
+- Speed: 8.89 -> 9.14 Mhash/s = **1.028x (2.8%)** = <1% end-to-end. NOT worth deploying.
+- Why: RIPEMD-160 is latency-bound (serial round dependency a->a->a x80 x2 lines),
+  not op-count-bound. Removing ~80 adds + 8 gathers barely touches the critical path;
+  the compiler already folded most constants at -Ofast. 4-way SIMD fills NEON width
+  but the per-lane chain latency dominates.
+- Only path to real RIPEMD gain: 8-way SIMD (2 NEON regs/var) to hide more latency.
+  High effort + risk, ~5-6% e2e best case. Odds (1-in-8.4M/yr) don't justify it.
+- Artifact kept: experimental_ripemd160_opt.cpp + tests/bench_ripemd160_opt.cpp (NOT
+  in the build). Campaign conclusion: hardware SHA (+36%) was the one real lever; done.
