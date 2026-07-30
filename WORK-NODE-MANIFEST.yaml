@@ -1,0 +1,9 @@
+schema: 1
+node: bitcoin-hunter
+status: parked
+purpose: "Puzzle #71 keyhunt on Oracle free tier (~157k keys/sec, 3 threads max) — lottery ticket, not active work"
+home: ~/projects/bitcoin-hunter
+kind: tool
+domain: main
+
+# The hunt itself runs on the Oracle VPS, not debian-langosta; no local workers.
