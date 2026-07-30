@@ -1,0 +1,40 @@
+
+## 2026-07-30 — Hardware SHA-256 (ARMv8 crypto ext) for hash160
+
+**Finding:** Oracle Neoverse-N1 exposes the `sha2` crypto extension (`/proc/cpuinfo`:
+`aes pmull sha1 sha2`). The NEON port hashed with the software 4-way SSE→sse2neon
+kernel and never used the hardware SHA-256 instructions. The prior project note
+("would need ARMv8 SHA crypto-ext ... none on free tier") was wrong — it is available.
+
+**Change:** New `sha256_hw.cpp` implements a single-block SHA-256 via
+`vsha256hq_u32/…su0/…su1` intrinsics, matching keyhunt's `sha256sse_1B` contract
+(16 native-endian schedule words in, big-endian 32-byte digest out). `sha256hw_1B`
+runs it x4. Guarded by `__ARM_FEATURE_SHA2`; falls back to `sha256sse_1B` elsewhere.
+SECP256K1.cpp hash160 paths call `sha256hw_1B`; Makefile `arm` target builds/links it.
+
+**Validation (dev tree /home/opc/keyhunt-dev, live hunt untouched):**
+- KAT SHA-256("abc") ✓ both kernels.
+- Byte-identical to NEON over 4096×4 random blocks (0 mismatches).
+- End-to-end: recovers puzzle keys 1,3,7,8,15,31,0x4c,0xe0,0x1d3,0x202,0x483,0xa7b,
+  0x1460,0x2930 with correct compressed addresses.
+
+**Speed (1 core, core-3, away from hunt):**
+- SHA-256 kernel micro: 5.44 → 16.69 Mhash/s = 3.07x.
+- Full keyhunt: 1,091,447 → 1,482,069 keys/s = **1.36x (~36%)** end-to-end.
+- Projected 3-thread hunt: ~3.3 → ~4.5 Mkeys/s.
+
+**Deploy status:** NOT deployed. Production binary /home/opc/keyhunt-arm/keyhunt still
+the NEON build. Deploy = stop hunt, swap binary + source, restart. Pending Juan's go.
+
+### Deployed to production 2026-07-30 ~20:40 UTC
+- Stopped runner+hunt cleanly (gotcha: orphaned heartbeat `sleep 300` kept the
+  flock fd 9 open after the wrapper died; had to kill it before hunt71.sh would
+  re-acquire the single-instance lock).
+- Backed up prior NEON binary -> /home/opc/keyhunt-arm/keyhunt.neon.bak
+  (rollback: stop hunt, `cp keyhunt.neon.bak keyhunt`, relaunch). legacy.bak also intact.
+- Deployed source into /home/opc/keyhunt-arm, rebuilt `make arm`, self-check OK.
+- Relaunched via `setsid ./hunt71.sh`; keyhunt -t 3 -R live on new binary.
+- Old in-flight regions (abandoned, EV-neutral): 4f1916.., 62de14.., 5876eb..
+  New regions: 74ef82.., 781588.., 55f571.. (fresh, no overlap).
+- No work lost: random mode has no checkpoint; solution-save logic (SOLUTION_*.txt
+  + Kuma DOWN ping) intact; runner-dir KEYFOUND clean.
