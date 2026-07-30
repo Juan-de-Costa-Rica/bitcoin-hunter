@@ -38,3 +38,20 @@ the NEON build. Deploy = stop hunt, swap binary + source, restart. Pending Juan'
   New regions: 74ef82.., 781588.., 55f571.. (fresh, no overlap).
 - No work lost: random mode has no checkpoint; solution-save logic (SOLUTION_*.txt
   + Kuma DOWN ping) intact; runner-dir KEYFOUND clean.
+
+## Profile-driven roadmap (2026-07-30, deployed binary, perf)
+Hot path GetHash160_fromX = 51% of thread time:
+  - ripemd160sse_32 (RIPEMD-160, sse2neon 4-way): **32%**  <- now #1 hotspot
+  - sha256hw_1B (hardware SHA-256): 18%  <- already optimized, leave it
+IntGroup::ModInv + ModMulK1 (field math): ~12%
+Remainder: EC point adds / endomorphism bookkeeping.
+
+Re-prioritized levers:
+  #2 RIPEMD-160: no ARM hardware instr exists; kernel is already 4-way SIMD.
+     sse2neon already lowers to native NEON, so a hand rewrite likely nets only
+     ~10-15% on RIPEMD = ~3-5% end-to-end. LOW value.
+  #3 Field math (ModMulK1 __int128): hand-tuned UMULH/MUL, marginal (~1-3% e2e).
+  DROP: generic "multi-buffer SHA" — SHA is only 18% now, not worth it.
+Strategic note: hardware SHA was the one lever with a real HW backing (3x).
+Everything left is software-SIMD-bound with small end-to-end payoff. Given
+P(solve/yr)=1-in-8.4M, further micro-opt is exercise, not expected value.
