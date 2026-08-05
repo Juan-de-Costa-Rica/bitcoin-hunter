@@ -254,6 +254,12 @@
     if (y >= 1e3) return fmtInt(y) + " years";
     return y.toFixed(1) + " years";
   }
+  function fmtCompact(n){
+    if (n >= 1e12) return (n/1e12).toFixed(1).replace(/\.0$/,"") + "T";
+    if (n >= 1e9)  return (n/1e9).toFixed(1).replace(/\.0$/,"")  + "B";
+    if (n >= 1e6)  return (n/1e6).toFixed(0) + "M";
+    return fmtInt(n);
+  }
   function fmtBig(n){
     if (n >= 1e12) return (n/1e12).toFixed(1).replace(/\.0$/,"") + " trillion";
     if (n >= 1e9)  return (n/1e9).toFixed(1).replace(/\.0$/,"")  + " billion";
@@ -296,7 +302,7 @@
     var tickets = keys / KEYS_PER_TICKET;
     document.getElementById("tickets").textContent = tickets.toFixed(3);
     document.getElementById("meter-fill").style.width = ((tickets % 1) * 100).toFixed(2) + "%";
-    document.getElementById("covered").textContent = "1 in " + fmtBig(KEYSPACE / keys);
+    document.getElementById("covered").textContent = "1 in " + fmtCompact(KEYSPACE / keys);
   }
 
   function apply(d){
