@@ -129,6 +129,73 @@ The same $5 on Powerball buys 2.5 tickets at 1 in 117 million.
 
 ---
 
+## 4b. Subscriptions (considered 2026-08-05, not built)
+
+Juan asked whether $1–$5/month tiers would work better than one-off payments.
+He also noticed it implies a different payout mechanic. It does, and that is
+where it breaks.
+
+**The value ratio does not improve.** The math is linear, so every tier and
+every duration returns the same ~2.9% of money spent. Subscriptions do not make
+the deal better; they only accumulate it.
+
+What *does* improve is the headline, and honestly so — odds compound:
+
+| Tier | 1 month | 1 year | 5 years |
+|---|---|---|---|
+| $1/mo | 1 in 15.6M | 1 in 1.3M | 1 in 260,000 |
+| $5/mo | 1 in 3.1M | 1 in 260,000 | 1 in 52,000 |
+| $20/mo | 1 in 781,000 | 1 in 65,000 | 1 in 13,000 |
+
+"1 in 52,000 after five years" against Powerball's 1 in 292 million per ticket
+is a genuinely strong line, and it is true.
+
+### The killer is product, not law: a shared prize collapses at scale
+
+If subscribers split the prize, then N subscribers each paying $5/mo gives:
+
+| Subscribers | Pool wins once every | Each person's share |
+|---|---|---|
+| 10 | 26,000 years | $45,868 |
+| 100 | 2,600 years | $4,587 |
+| 1,000 | 260 years | $459 |
+| 10,000 | 26 years | $46 |
+
+Expected value per subscriber is identical in every row (~$0.15/mo) — but the
+*experience* is not. At the only subscriber counts that make it a business, the
+payout becomes trivial. Nobody wants to win $46 after waiting 26 years. The
+7.1 BTC prize is simply too small to divide. **Any design that splits it dies
+at scale.**
+
+### Therefore: if subscriptions, keep winner-takes-all
+
+Make a subscription a recurring purchase of *ranges*, not a share of a pool.
+Each month buys the subscriber their own slice; if their slice hits, they take
+the whole prize. That preserves the pre-commitment audit in §4, keeps each bet
+resolving immediately, and limits the ledger to "who is currently subscribed" —
+which the billing processor already tracks — instead of a permanent claims
+history.
+
+### Legally it is not an improvement, and one variant is worse
+
+- Selling subscriptions does not soften gambling exposure. Real lotteries sell
+  direct-debit subscriptions; it is a billing cycle, not a different product.
+- **The pooled-and-split variant drifts from gambling law into securities law:**
+  collecting money into a common enterprise and distributing proceeds is the
+  shape of a collective investment scheme. Cloud-mining contracts have been
+  pursued as unregistered securities offerings on exactly this reasoning. That
+  is a worse regime to land in, not a better one.
+
+### The clean version
+
+Subscription applied to the **gift** model in §1 is just a Patreon: $1/month
+supports the hunt, the supporter gets the show and a name on the page, and is
+owed nothing. Predictable revenue, no payout mechanic to design, no licensing,
+no dilution problem. This is the strongest form of the subscription idea and the
+only one buildable today.
+
+---
+
 ## 5. Range assignment (applies to any multi-participant version)
 
 **Do not assign ranges to avoid duplicate work.** That problem does not exist.
