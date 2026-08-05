@@ -1,0 +1,3 @@
+# Internal notes live next to the site but must not be served from the webroot.
+GOING-PUBLIC.md export-ignore
+.gitattributes export-ignore
