@@ -153,8 +153,9 @@
     .meter-top{flex-direction:column;align-items:flex-start;gap:2px}
     .meter-top .cap{text-align:left}
     .meter-top .big{font-size:26px}
-    .fact{gap:10px}
-    .fact .v{white-space:normal}
+    /* side-by-side label/value wraps badly at this width — stack instead */
+    .fact{flex-direction:column;align-items:flex-start;gap:1px}
+    .fact .v{text-align:left;color:var(--ink);font-size:15px}
     .target{gap:12px}
   }
 </style>
