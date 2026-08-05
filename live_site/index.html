@@ -20,7 +20,7 @@
     --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,"DejaVu Sans Mono",monospace;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;padding:0}
+  html,body{margin:0;padding:0;overflow-x:hidden}
   body{
     background:
       radial-gradient(1200px 700px at 50% -10%, #16181f 0%, transparent 60%),
@@ -106,7 +106,7 @@
   .row .miss{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#3a404c}
 
   /* ---- stat tiles ---- */
-  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:14px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:14px;margin-bottom:14px}
   .tile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
   .tile .label{font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px}
   .tile .value{font-size:26px;font-variant-numeric:tabular-nums;color:var(--ink);line-height:1.15}
@@ -121,7 +121,8 @@
   .meter-top .cap{font-size:12px;color:var(--ink-3);text-align:right}
   .meter{height:9px;background:#1b1f27;border-radius:999px;overflow:hidden}
   .meter .fill{height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--accent-dim),var(--accent));transition:width .9s linear}
-  .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:12px 40px;margin-top:18px}
+  /* min() keeps the track from forcing a 400px column on a 360px phone */
+  .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:12px 40px;margin-top:18px}
   .fact{display:flex;justify-content:space-between;gap:14px;font-size:13px;border-bottom:1px dashed #1e222b;padding-bottom:7px}
   .fact .k{color:var(--ink-3)}
   .fact .v{color:var(--ink-2);font-variant-numeric:tabular-nums;text-align:right}
@@ -138,6 +139,24 @@
   .banner.dark{background:#1a1206;border:1px solid #4a3a12;color:var(--accent)}
   .banner.warn{background:#1a0f0f;border:1px solid #4a2020;color:#ff9d9d}
   @media (prefers-reduced-motion:reduce){.row{animation:none}.status.live .dot{animation:none}}
+
+  /* ---- narrow screens ---- */
+  @media (max-width:640px){
+    body{padding:18px 12px 40px;font-size:14px}
+    .counter{font-size:clamp(19px,5.4vw,34px);letter-spacing:0}
+    .counter .unit{display:block;margin:4px 0 0;font-size:11px}
+    .hero,.odds,.tile,.target{padding:14px 15px}
+    .stream{height:230px}
+    .rows{padding:36px 12px 10px}
+    .row{font-size:11.5px;gap:8px}
+    .row .miss{display:none}          /* the "no match" tag is the first thing to cut */
+    .meter-top{flex-direction:column;align-items:flex-start;gap:2px}
+    .meter-top .cap{text-align:left}
+    .meter-top .big{font-size:26px}
+    .fact{gap:10px}
+    .fact .v{white-space:normal}
+    .target{gap:12px}
+  }
 </style>
 </head>
 <body>
