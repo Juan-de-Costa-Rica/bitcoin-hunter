@@ -91,7 +91,7 @@
     text-transform:uppercase;color:var(--ink-3);
   }
   .rows{
-    position:absolute;inset:0;padding:8px 16px 12px;
+    position:absolute;inset:0;padding:40px 16px 12px;
     display:flex;flex-direction:column-reverse;justify-content:flex-start;
   }
   .row{
@@ -121,7 +121,7 @@
   .meter-top .cap{font-size:12px;color:var(--ink-3);text-align:right}
   .meter{height:9px;background:#1b1f27;border-radius:999px;overflow:hidden}
   .meter .fill{height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--accent-dim),var(--accent));transition:width .9s linear}
-  .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px 26px;margin-top:18px}
+  .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:12px 40px;margin-top:18px}
   .fact{display:flex;justify-content:space-between;gap:14px;font-size:13px;border-bottom:1px dashed #1e222b;padding-bottom:7px}
   .fact .k{color:var(--ink-3)}
   .fact .v{color:var(--ink-2);font-variant-numeric:tabular-nums;text-align:right}
@@ -182,7 +182,7 @@
     <div class="tile">
       <div class="label">Keyspace covered</div>
       <div class="value" id="covered">—</div>
-      <div class="note">of 1.18 sextillion keys</div>
+      <div class="note">of the 1.18 sextillion possible keys</div>
     </div>
     <div class="tile">
       <div class="label">Prize if found</div>
@@ -254,6 +254,12 @@
     if (y >= 1e3) return fmtInt(y) + " years";
     return y.toFixed(1) + " years";
   }
+  function fmtBig(n){
+    if (n >= 1e12) return (n/1e12).toFixed(1).replace(/\.0$/,"") + " trillion";
+    if (n >= 1e9)  return (n/1e9).toFixed(1).replace(/\.0$/,"")  + " billion";
+    if (n >= 1e6)  return (n/1e6).toFixed(0) + " million";
+    return fmtInt(n);
+  }
   function randKey(){
     // uniform-ish over [2^70, 2^71): top nibble 4-7, then 17 free nibbles
     var s = HEX[4 + Math.floor(Math.random()*4)];
@@ -262,7 +268,7 @@
   }
 
   var rowsEl = document.getElementById("rows");
-  var MAX_ROWS = 14, sinceReal = 0;
+  var MAX_ROWS = 11, sinceReal = 0;
   function addRow(){
     var real = false, key;
     if (state.base.length && sinceReal >= 11){
@@ -290,7 +296,7 @@
     var tickets = keys / KEYS_PER_TICKET;
     document.getElementById("tickets").textContent = tickets.toFixed(3);
     document.getElementById("meter-fill").style.width = ((tickets % 1) * 100).toFixed(2) + "%";
-    document.getElementById("covered").textContent = (keys / KEYSPACE * 100).toExponential(2) + " %";
+    document.getElementById("covered").textContent = "1 in " + fmtBig(KEYSPACE / keys);
   }
 
   function apply(d){
