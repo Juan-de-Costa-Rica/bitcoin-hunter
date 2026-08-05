@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Puzzle #71 — live key hunt</title>
+<style>
+  :root{
+    --surface:#08090b;
+    --panel:#101216;
+    --panel-2:#161920;
+    --line:#242832;
+    --ink:#e9ecf2;
+    --ink-2:#9aa3b2;
+    --ink-3:#646c7c;
+    --accent:#f2b544;          /* the hunt's single identity hue */
+    --accent-dim:#7a5c1f;
+    --live:#3ddc97;
+    --dead:#ff6b6b;
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,"DejaVu Sans Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:
+      radial-gradient(1200px 700px at 50% -10%, #16181f 0%, transparent 60%),
+      var(--surface);
+    color:var(--ink);
+    font-family:var(--mono);
+    font-size:15px;
+    line-height:1.5;
+    padding:28px 20px 60px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto}
+
+  /* ---- header ---- */
+  header{display:flex;flex-wrap:wrap;align-items:baseline;gap:14px;margin-bottom:6px}
+  h1{
+    font-size:clamp(22px,4.2vw,34px);
+    letter-spacing:.14em;
+    margin:0;
+    text-transform:uppercase;
+    color:var(--accent);
+    text-shadow:0 0 22px rgba(242,181,68,.28);
+  }
+  .status{
+    display:inline-flex;align-items:center;gap:8px;
+    font-size:12px;letter-spacing:.18em;text-transform:uppercase;
+    border:1px solid var(--line);border-radius:999px;
+    padding:4px 12px;color:var(--ink-2);background:var(--panel);
+  }
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ink-3)}
+  .status.live .dot{background:var(--live);box-shadow:0 0 0 0 rgba(61,220,151,.65);animation:pulse 2s infinite}
+  .status.live{color:var(--live);border-color:#1f4a3a}
+  .status.down .dot{background:var(--dead)}
+  .status.down{color:var(--dead);border-color:#4a2020}
+  @keyframes pulse{70%{box-shadow:0 0 0 9px rgba(61,220,151,0)}100%{box-shadow:0 0 0 0 rgba(61,220,151,0)}}
+  .sub{color:var(--ink-2);font-size:13px;margin:0 0 22px;max-width:70ch}
+  .sub a{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent-dim)}
+
+  /* ---- hero counter ---- */
+  .hero{
+    background:linear-gradient(180deg,var(--panel) 0%,var(--panel-2) 100%);
+    border:1px solid var(--line);border-radius:14px;
+    padding:22px 24px;margin-bottom:14px;
+  }
+  .hero .label{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3)}
+  .counter{
+    font-size:clamp(28px,7.2vw,58px);
+    letter-spacing:.02em;font-variant-numeric:tabular-nums;
+    color:var(--ink);margin:2px 0 0;
+    text-shadow:0 0 30px rgba(233,236,242,.10);
+  }
+  .counter .unit{font-size:.42em;color:var(--ink-3);letter-spacing:.16em;margin-left:10px}
+
+  /* ---- key stream ---- */
+  .stream{
+    position:relative;overflow:hidden;
+    height:270px;border:1px solid var(--line);border-radius:14px;
+    background:var(--panel);margin-bottom:14px;
+  }
+  .stream::before{ /* top fade */
+    content:"";position:absolute;inset:0 0 auto 0;height:78px;z-index:2;pointer-events:none;
+    background:linear-gradient(180deg,var(--panel) 0%,rgba(16,18,22,0) 100%);
+  }
+  .stream-head{
+    position:absolute;top:0;left:0;right:0;z-index:3;
+    display:flex;justify-content:space-between;gap:10px;
+    padding:10px 16px;font-size:10.5px;letter-spacing:.2em;
+    text-transform:uppercase;color:var(--ink-3);
+  }
+  .rows{
+    position:absolute;inset:0;padding:8px 16px 12px;
+    display:flex;flex-direction:column-reverse;justify-content:flex-start;
+  }
+  .row{
+    display:flex;align-items:center;gap:12px;
+    font-size:13.5px;color:var(--ink-3);white-space:nowrap;
+    animation:rise .34s ease-out;
+  }
+  @keyframes rise{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+  .row .k{color:#8d97a8}
+  .row.real .k{color:var(--accent);text-shadow:0 0 14px rgba(242,181,68,.35)}
+  .row .tag{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent-dim)}
+  .row .miss{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#3a404c}
+
+  /* ---- stat tiles ---- */
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:14px}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+  .tile .label{font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px}
+  .tile .value{font-size:26px;font-variant-numeric:tabular-nums;color:var(--ink);line-height:1.15}
+  .tile .value small{font-size:13px;color:var(--ink-3);margin-left:6px}
+  .tile .note{font-size:11.5px;color:var(--ink-3);margin-top:6px}
+
+  /* ---- odds panel ---- */
+  .odds{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:14px}
+  .odds h2{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);margin:0 0 14px;font-weight:400}
+  .meter-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:9px}
+  .meter-top .big{font-size:30px;font-variant-numeric:tabular-nums}
+  .meter-top .cap{font-size:12px;color:var(--ink-3);text-align:right}
+  .meter{height:9px;background:#1b1f27;border-radius:999px;overflow:hidden}
+  .meter .fill{height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--accent-dim),var(--accent));transition:width .9s linear}
+  .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px 26px;margin-top:18px}
+  .fact{display:flex;justify-content:space-between;gap:14px;font-size:13px;border-bottom:1px dashed #1e222b;padding-bottom:7px}
+  .fact .k{color:var(--ink-3)}
+  .fact .v{color:var(--ink-2);font-variant-numeric:tabular-nums;text-align:right}
+
+  /* ---- target + footer ---- */
+  .target{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:14px;
+          display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline;justify-content:space-between}
+  .target .addr{font-size:13px;color:var(--accent);word-break:break-all}
+  .target .label{font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3)}
+  footer{color:var(--ink-3);font-size:12px;line-height:1.7;border-top:1px solid var(--line);padding-top:16px;max-width:80ch}
+  footer strong{color:var(--ink-2);font-weight:400}
+  .banner{display:none;border-radius:14px;padding:14px 18px;margin-bottom:14px;font-size:13px}
+  .banner.show{display:block}
+  .banner.dark{background:#1a1206;border:1px solid #4a3a12;color:var(--accent)}
+  .banner.warn{background:#1a0f0f;border:1px solid #4a2020;color:#ff9d9d}
+  @media (prefers-reduced-motion:reduce){.row{animation:none}.status.live .dot{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Puzzle&nbsp;#71</h1>
+    <span class="status" id="status"><span class="dot"></span><span id="status-text">connecting</span></span>
+  </header>
+  <p class="sub">
+    A homelab computer in Costa Rica is guessing Bitcoin private keys, around the clock,
+    hoping to stumble onto the one that opens a wallet holding 7.1&nbsp;BTC. It will not.
+    This page shows the real numbers anyway. <a href="#honesty">Read the fine print.</a>
+  </p>
+
+  <div class="banner" id="banner"></div>
+
+  <section class="hero">
+    <div class="label">Keys checked this run</div>
+    <div class="counter" id="keycount">—<span class="unit">and counting</span></div>
+  </section>
+
+  <section class="stream" aria-label="Live stream of checked keys">
+    <div class="stream-head">
+      <span>keyspace 2<sup>70</sup> – 2<sup>71</sup></span>
+      <span id="stream-rate">—</span>
+    </div>
+    <div class="rows" id="rows"></div>
+  </section>
+
+  <section class="tiles">
+    <div class="tile">
+      <div class="label">Search rate</div>
+      <div class="value" id="rate">—<small>keys/sec</small></div>
+      <div class="note">3 ARM cores, hardware SHA-256</div>
+    </div>
+    <div class="tile">
+      <div class="label">Running for</div>
+      <div class="value" id="uptime">—</div>
+      <div class="note" id="since">since —</div>
+    </div>
+    <div class="tile">
+      <div class="label">Keyspace covered</div>
+      <div class="value" id="covered">—</div>
+      <div class="note">of 1.18 sextillion keys</div>
+    </div>
+    <div class="tile">
+      <div class="label">Prize if found</div>
+      <div class="value" id="prize">7.1<small>BTC</small></div>
+      <div class="note" id="prize-usd">—</div>
+    </div>
+  </section>
+
+  <section class="odds">
+    <h2>The honest odds</h2>
+    <div class="meter-top">
+      <div class="big" id="tickets">—</div>
+      <div class="cap">Powerball tickets' worth of luck<br>earned this run</div>
+    </div>
+    <div class="meter"><div class="fill" id="meter-fill"></div></div>
+    <div class="facts">
+      <div class="fact"><span class="k">One ticket's worth of odds</span><span class="v" id="f-ticket">—</span></div>
+      <div class="fact"><span class="k">Chance of winning per year</span><span class="v" id="f-year">—</span></div>
+      <div class="fact"><span class="k">Expected time to solve</span><span class="v" id="f-mean">—</span></div>
+      <div class="fact"><span class="k">Powerball jackpot odds</span><span class="v">1 in 292,201,338</span></div>
+    </div>
+  </section>
+
+  <section class="target">
+    <div>
+      <div class="label">Target address</div>
+      <div class="addr">1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU</div>
+    </div>
+    <div>
+      <div class="label">Status</div>
+      <div class="addr" style="color:var(--ink-2)">unspent since 2015</div>
+    </div>
+  </section>
+
+  <footer id="honesty">
+    <strong>What this is.</strong> Bitcoin puzzle #71 is a wallet whose creator deliberately
+    used a private key inside a known 71-bit range. Anyone who finds it keeps the coins. Ours is
+    the slowest kind of search: a free cloud CPU trying random keys.<br><br>
+    <strong>What this is not.</strong> Nothing here is for sale. There are no tickets, no entries,
+    no stake, and no payout to anybody but the machine's owner. Nobody is being asked for money,
+    and no one who watches this page is owed anything.<br><br>
+    <strong>The math, plainly.</strong> At the rate above, the expected time to find the key is
+    longer than the age of the Earth. The keys scrolling past are a live sample, not the whole
+    story: highlighted lines are real batch starting points from the engine, the rest are drawn
+    from the same range to show you the shape of the haystack. The counter is real.
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var POWERBALL_ODDS = 292201338;
+  var KEYSPACE = Math.pow(2,70);
+  var KEYS_PER_TICKET = KEYSPACE / POWERBALL_ODDS;
+  var HEX = "0123456789abcdef";
+
+  var state = { rate:0, keys:0, at:0, running:false, base:[], bi:0, ok:false };
+
+  function fmtInt(n){ return Math.floor(n).toLocaleString("en-US"); }
+  function fmtDur(s){
+    var d = Math.floor(s/86400), h = Math.floor((s%86400)/3600), m = Math.floor((s%3600)/60);
+    if (d > 0) return d + "d " + h + "h";
+    if (h > 0) return h + "h " + m + "m";
+    return m + "m";
+  }
+  function fmtYears(y){
+    if (y >= 1e9) return (y/1e9).toFixed(1) + " billion years";
+    if (y >= 1e6) return (y/1e6).toFixed(1) + " million years";
+    if (y >= 1e3) return fmtInt(y) + " years";
+    return y.toFixed(1) + " years";
+  }
+  function randKey(){
+    // uniform-ish over [2^70, 2^71): top nibble 4-7, then 17 free nibbles
+    var s = HEX[4 + Math.floor(Math.random()*4)];
+    for (var i=0;i<17;i++) s += HEX[Math.floor(Math.random()*16)];
+    return s;
+  }
+
+  var rowsEl = document.getElementById("rows");
+  var MAX_ROWS = 14, sinceReal = 0;
+  function addRow(){
+    var real = false, key;
+    if (state.base.length && sinceReal >= 11){
+      key = state.base[state.bi % state.base.length];
+      state.bi++; sinceReal = 0; real = true;
+    } else {
+      key = randKey(); sinceReal++;
+    }
+    var row = document.createElement("div");
+    row.className = "row" + (real ? " real" : "");
+    row.innerHTML = '<span class="k">' + key + '</span>' +
+      (real ? '<span class="tag">real batch start</span>' : '<span class="miss">no match</span>');
+    rowsEl.insertBefore(row, rowsEl.firstChild);
+    while (rowsEl.childElementCount > MAX_ROWS) rowsEl.removeChild(rowsEl.lastChild);
+  }
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!reduce) setInterval(function(){ if (state.running) addRow(); }, 72);
+
+  function paintLive(){
+    if (!state.ok || !state.running) return;
+    var elapsed = (Date.now() - state.at)/1000;
+    var keys = state.keys + state.rate * elapsed;
+    document.getElementById("keycount").innerHTML =
+      fmtInt(keys) + '<span class="unit">and counting</span>';
+    var tickets = keys / KEYS_PER_TICKET;
+    document.getElementById("tickets").textContent = tickets.toFixed(3);
+    document.getElementById("meter-fill").style.width = ((tickets % 1) * 100).toFixed(2) + "%";
+    document.getElementById("covered").textContent = (keys / KEYSPACE * 100).toExponential(2) + " %";
+  }
+
+  function apply(d){
+    var st = document.getElementById("status"),
+        stx = document.getElementById("status-text"),
+        banner = document.getElementById("banner");
+
+    if (d.solved){
+      st.className = "status"; stx.textContent = "feed dark";
+      banner.className = "banner dark show";
+      banner.textContent = "The hunt has stopped and this feed is intentionally dark. "
+        + "Details follow once the result is settled.";
+      state.running = false; return;
+    }
+    if (!d.feed_ok){
+      st.className = "status down"; stx.textContent = "no signal";
+      banner.className = "banner warn show";
+      banner.textContent = "Cannot reach the hunt machine right now. Numbers below are stale.";
+      state.running = false; return;
+    }
+    banner.className = "banner";
+    state.ok = true;
+    state.running = !!d.running;
+    state.rate = d.rate_keys_per_sec || 0;
+    state.keys = d.keys_this_run || 0;
+    state.at = Date.parse(d.generated_at);
+    state.base = d.recent_base_keys || [];
+
+    st.className = "status " + (d.running ? "live" : "down");
+    stx.textContent = d.running ? "hunting" : "stopped";
+
+    document.getElementById("rate").innerHTML =
+      fmtInt(state.rate) + '<small>keys/sec</small>';
+    document.getElementById("stream-rate").textContent =
+      (state.rate/1e6).toFixed(2) + " M keys/sec";
+    document.getElementById("uptime").textContent = fmtDur(d.run_seconds || 0);
+    if (d.run_started){
+      document.getElementById("since").textContent =
+        "since " + new Date(d.run_started).toLocaleString("en-US",
+          {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"});
+    }
+    if (d.btc_usd){
+      document.getElementById("prize-usd").textContent =
+        "$" + fmtInt(d.prize_btc * d.btc_usd) + " at today's price";
+    }
+
+    if (state.rate > 0){
+      document.getElementById("f-ticket").textContent =
+        fmtDur(KEYS_PER_TICKET / state.rate) + " of hunting";
+      var meanYears = KEYSPACE / state.rate / 31557600;
+      document.getElementById("f-mean").textContent = fmtYears(meanYears);
+      document.getElementById("f-year").textContent =
+        "1 in " + fmtInt(meanYears);
+    }
+    paintLive();
+  }
+
+  function load(){
+    fetch("data.json?t=" + Date.now(), {cache:"no-store"})
+      .then(function(r){ return r.json(); })
+      .then(apply)
+      .catch(function(){
+        var st = document.getElementById("status");
+        st.className = "status down";
+        document.getElementById("status-text").textContent = "no signal";
+      });
+  }
+  load();
+  setInterval(load, 60000);
+  setInterval(paintLive, 100);
+})();
+</script>
+</body>
+</html>
