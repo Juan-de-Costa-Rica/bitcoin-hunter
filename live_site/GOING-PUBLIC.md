@@ -1,145 +1,182 @@
-# Taking the puzzle-71 live page public (tier 3)
+# Puzzle-71 hunt: public deployment and paid-product design
 
-Status: **not done, deliberately.** Juan deferred this on 2026-08-05. The page
-runs at tier 2 only: `https://web.mink-gopher.ts.net/puzzle71-live/`, reachable
-over Tailscale. This file is the decision record so the next pass does not have
-to re-derive it.
+Two things live here:
 
----
+- **Part A** — what it takes to put the existing live page on the public
+  internet. Deferred by Juan on 2026-08-05; the page runs at tier 2 only,
+  `https://web.mink-gopher.ts.net/puzzle71-live/`, reachable over Tailscale.
+- **Part B** — a design thought experiment: if we sold hunting to the public,
+  what is the right product? Not built. Explored with Juan on 2026-08-05.
 
-## 1. The one rule that shapes everything
+## Operating premise for Part B
 
-**Selling a chance at the prize is a lottery.** In the US, the EU, and Costa
-Rica, taking money in exchange for a shot at the 7.1 BTC needs gambling
-licensing per jurisdiction, and crypto payments add money-transmitter rules on
-top. It also cannot be made trustworthy by construction: a win materialises as
-a private key on a machine we control, so no contract or escrow can guarantee
-a payout to anyone else.
+**Assume a jurisdiction where running a lottery is permitted and licensed.**
+Juan set this premise deliberately on 2026-08-05: legality is not the question
+being explored, so it is not re-argued in every section. Everything in Part B is
+a *design* argument — what makes a good product, what breaks at scale, what the
+numbers actually are. Licensing facts are parked in Appendix L.
 
-Do not "improve" the current page into a ticket sale. If a future session is
-asked to add tickets, entries, stakes, or revenue share, it should surface this
-section rather than build it.
-
-### The three coherent designs
-
-Only these three are internally consistent. There is no fourth.
-
-| Model | Money in | Payout promised | Payout address collected | Needs a license |
-|---|---|---|---|---|
-| **Gift** (what is built today) | yes | none | **no** | no |
-| **Compute pool** | no | published split | yes | no |
-| **Paid ranges** | yes | yes | yes | **yes** |
-
-The payout address is the tell. Collecting one from someone who paid *is* the
-entitlement, and no disclaimer elsewhere on the page survives it. Collecting one
-from someone who contributed compute instead of money is fine — that is a
-work-sharing agreement, not a wager.
-
-If we ever win and want to thank people who watched, do it afterwards as an
-unannounced gift. A voluntary act after the fact is not a wager. An advertised
-intention to share is.
+Because that premise is doing real work, state it plainly to anyone who picks
+this up later: **nothing in Part B is buildable in Costa Rica as written.** See
+Appendix L before anyone treats it as a plan rather than a design study.
 
 ---
 
-## 2. What tier 3 actually requires
+# Part A — taking the live page public (tier 3)
 
 1. **Pick the hostname.** Suggest a subdomain of jonjuan.com. DNS for that zone
    is Cloudflare, proxied — Namecheap is hosting only. See the
    `jonjuan_dns_cloudflare` and `public_access_oracle_caddy` memories.
-2. **Add the Caddy route on Oracle.** The real file is `~/caddy/Caddyfile` on the
-   Oracle box. Route the new host to the homelab web container over Tailscale,
-   same shape as the existing shared routes. Juan approves before any public
-   bind — this is a consent boundary.
-3. **Decide the gate.** Existing public routes use a key/cookie gate
-   (mistaway does). This page is meant to be seen, so it would be the first
-   ungated one. Confirm that with Juan explicitly rather than assuming.
+2. **Add the Caddy route on Oracle.** The real file is `~/caddy/Caddyfile` on
+   the Oracle box. Route the new host to the homelab web container over
+   Tailscale, same shape as the existing shared routes. Juan approves before any
+   public bind — this is a consent boundary.
+3. **Decide the gate.** Existing public routes use a key/cookie gate (mistaway
+   does). This page is meant to be seen, so it would be the first ungated one.
+   Confirm that with Juan explicitly rather than assuming.
 4. **Rate-limit and cache.** `data.json` is refreshed every 10 minutes by the
    isocrono rail `puzzle71-live-refresh`; the page polls it every 60s. Public
    traffic should hit a Caddy cache, not the homelab container, and must never
    cause an extra ssh to Oracle — the collector is the only thing that talks to
    the hunt box, on its own schedule.
-5. **Keep the kill switch verified.** `bin/refresh-puzzle71-live-data.sh`
+5. **Verify the kill switch before launch.** `bin/refresh-puzzle71-live-data.sh`
    publishes a dark feed the moment a `SOLUTION_puzzle71_*.txt` exists on
    Oracle. Public exposure makes this critical, not optional: a page announcing
    a solve hands snipers the pubkey window before the private-relay sweep in
-   `../keyhunt_runner/SOLUTION-RUNBOOK.md`. Test it before going public by
-   touching a fake solution file on Oracle, confirming the page goes dark, then
-   removing it.
+   `../keyhunt_runner/SOLUTION-RUNBOOK.md`. Test by touching a fake solution
+   file on Oracle, confirming the page goes dark, then removing it.
+
+This step-5 requirement survives every design in Part B. Anything public that
+reveals a solve in real time destroys the prize it is advertising.
 
 ---
 
-## 3. If donations are ever added
+# Part B — the paid-hunt product
 
-- Use Stripe or Buy Me a Coffee, **not** raw BTC. The processor absorbs the
-  compliance surface; taking crypto directly reintroduces money-transmitter
-  questions we have no reason to take on.
-- Publish where the money goes (rented GPU hours) and show the burn rate. The
-  honesty is the product.
-- Do not promise a rate increase in exchange for a donation amount, and do not
-  collect a payout address. Both edge back toward selling odds.
+## B1. The shape that works
 
-**Cheapest viable first step:** a plain donate button on the existing page. One
-afternoon. It answers the only question that matters — whether anyone gives
-anything at all — before any further build.
+Of the structures considered, one survives scrutiny:
 
----
+> **Sell a named slice of the keyspace. Winner takes the whole prize. Publish
+> every assignment before it is searched. Resolve within hours.**
 
-## 4. The paid-range model (Juan's design, 2026-08-05)
+A buyer pays, we rent GPU time, we search *their* slice, and it is over the same
+day. Why each part matters:
 
-Recorded because the mechanic is good and should not be re-invented from
-scratch. **Not built, and it is the licensed row of the table in §1.**
+- **Named slice, not a share of a pool.** The prize is too small to divide (§B3).
+- **Winner takes all.** Preserves a life-changing outcome at any scale.
+- **Published in advance.** Makes our honesty auditable (§B2).
+- **Immediate resolution.** No claims ledger, nobody to track down years later.
+  This was Juan's contribution and it removes a genuine operational problem:
+  bets settle same-day, so the only records needed are billing records.
 
-Shape: a donor pays $5, we rent a GPU, we search *their* named slice of the
-keyspace with it, and the bet resolves within hours. If it misses, it is over.
+## B2. The trust problem, and the fix
 
-**What it solves.** No ledger of obligations, no claims living for years, no
-tracking anybody down later. That was a genuine objection to the naive
-"sponsor a share" idea and this removes it cleanly.
+Only we can see whether a buyer's slice hit. They cannot verify it, and on the
+one day it matters we would be the sole witness to a ~$459k event with every
+incentive to report a miss. Unfixed, this is the flaw that sinks the product —
+it is exactly the pattern that made every crypto-lottery scam.
 
-**What it does not solve.** The legal character is untouched. Money for a chance
-at a prize is a wager, and instant resolution makes it resemble a scratch card,
-which is among the most tightly regulated forms.
-
-**What it makes worse, and the fix.** Only we can see whether a donor's range
-hit. They cannot verify, and on the one day it matters we would be the sole
-witness to a ~$457k event with every incentive to report a miss.
-
-> **Fix: publish every range assignment publicly *before* the search runs,
+> **Fix: publish each range assignment publicly *before* searching it,
 > timestamped.** The target address is already public and any sweep of it is
 > permanently visible on-chain. If a win ever happened, a stranger could check
-> whether the winning key falls inside a range we had already published as
-> someone's. That makes our honesty auditable after the fact without anyone
-> having to trust us. Build it in from the first paid range or it is worthless
-> retroactively.
+> whether the winning key falls inside a range already published as someone's.
+> Honesty becomes auditable after the fact, by anyone, with no trust in us.
 
-### What $5 buys (computed 2026-08-05, rented 4090 at ~6 Gkeys/s, 30% margin)
+Build this from the first paid range. It cannot be added retroactively — the
+whole value is that the commitment predates the result.
 
-| GPU spot price | Compute delivered | Donor's odds |
+## B3. Never split the prize
+
+If buyers share the jackpot, the product dies precisely when it succeeds. N
+subscribers at $5/month, split evenly:
+
+| Buyers | Pool wins once every | Each person's share |
+|---|---|---|
+| 10 | 26,000 years | $45,868 |
+| 100 | 2,600 years | $4,587 |
+| 1,000 | 260 years | $459 |
+| 10,000 | 26 years | $46 |
+
+Expected value per person is identical in every row (~$0.15/mo). The
+*experience* is not. At the subscriber counts that make this a business, the
+payout is trivial — nobody waits 26 years to win $46. 7.1 BTC cannot be
+meaningfully divided. Every design that splits it fails.
+
+## B4. The binding constraint is return-to-player, not odds
+
+This is the real problem, and it only becomes visible once legality is set
+aside.
+
+What $5 buys at a $0.20/hr rented 4090 (~6 Gkeys/s), 30% margin:
+
+| GPU spot price | Compute delivered | Buyer's odds |
 |---|---|---|
 | $0.13/hr | 27 GPU-hours | 1 in 2.0 million |
 | $0.20/hr | 17.5 GPU-hours | 1 in 3.1 million |
 | $0.35/hr | 10 GPU-hours | 1 in 5.5 million |
 
-The same $5 on Powerball buys 2.5 tickets at 1 in 117 million.
+The same $5 on Powerball buys 2.5 tickets at 1 in 117 million, so **the odds
+headline is genuinely excellent: ~37x better than Powerball, and true.**
 
-- **True headline: roughly 37x better odds of winning than Powerball.**
-- **True counterweight, and it must be published alongside:** the donor gets
-  about 15 cents back per $5 on average. Powerball returns far more. The
-  difference is prize size, not odds — $457k versus $100M+.
+But the money coming back is not:
 
----
+- This product, jackpot only: **~2.9% of money spent**, and only ~6.5% even at
+  zero margin.
+- State lotteries: ~50% across all prize tiers.
+- Slot machines: 85–95%.
 
-## 4b. Subscriptions (considered 2026-08-05, not built)
+The cause is prize size, not odds — $459k against Powerball's $100M+. And it
+cannot be fixed by trimming margin. **A 3% return-to-player game gets played
+once, never twice.** Any real version of this must solve B5.
 
-Juan asked whether $1–$5/month tiers would work better than one-off payments.
-He also noticed it implies a different payout mechanic. It does, and that is
-where it breaks.
+Note on target choice: #71 is already the best available. Puzzle prizes grow
+linearly with number (N/10 BTC) while keyspace doubles each step, so every
+higher puzzle is worse value per key, and all lower ones are solved.
 
-**The value ratio does not improve.** The math is linear, so every tier and
-every duration returns the same ~2.9% of money spent. Subscriptions do not make
-the deal better; they only accumulate it.
+## B5. Near-miss prize tiers — the design that makes it viable
 
-What *does* improve is the headline, and honestly so — odds compound:
+The jackpot cannot carry the product, so manufacture intermediate prizes out of
+work already being done.
+
+The search computes a hash160 for every key it tries. Comparing the *first k
+bits* of that hash against the target's is a mask-and-compare on a value already
+in a register — **detection is essentially free.** Near-misses are common and
+tunable: pick k, get any frequency you want.
+
+Example ladder for a $5 purchase with 20% of revenue going to compute
+(1.08 × 10^14 keys):
+
+| Tier | Frequency | Pays | EV |
+|---|---|---|---|
+| 44-bit prefix match | 6.1 times per purchase | $0.10 | $0.61 |
+| 50-bit | 1 in 10 purchases | $4.00 | $0.38 |
+| 56-bit | 1 in 667 purchases | $300 | $0.45 |
+| 62-bit | 1 in 42,701 purchases | $15,000 | $0.35 |
+| Full key (jackpot) | 1 in 10.9 million purchases | $458,681 | $0.04 |
+
+Total return-to-player: **37%**, leaving ~43% margin after compute. Every number
+above is a free parameter — move the bit widths and payouts to hit whatever RTP
+and margin the business wants.
+
+What this buys, beyond the RTP number:
+
+- **Something happens every single purchase.** A 44-bit hit lands six times per
+  $5. The screen is never dead.
+- **A real prize ladder**, so the product resembles a scratch card rather than a
+  coin flip against a wall.
+- **Verifiable wins.** Every tier is checkable by anyone: hash the reported key,
+  compare the prefix. Unlike the jackpot, near-miss wins prove themselves
+  instantly and publicly. That is a trust asset, not just a prize.
+
+Use bit prefixes, not byte prefixes. Bytes jump by 256x per step and give no
+usable control; bits let you place each tier exactly.
+
+## B6. Subscriptions
+
+The value ratio is linear, so every tier and duration returns the same
+percentage. Subscriptions do not improve the deal; they accumulate it. What
+improves is the headline, honestly:
 
 | Tier | 1 month | 1 year | 5 years |
 |---|---|---|---|
@@ -147,79 +184,39 @@ What *does* improve is the headline, and honestly so — odds compound:
 | $5/mo | 1 in 3.1M | 1 in 260,000 | 1 in 52,000 |
 | $20/mo | 1 in 781,000 | 1 in 65,000 | 1 in 13,000 |
 
-"1 in 52,000 after five years" against Powerball's 1 in 292 million per ticket
-is a genuinely strong line, and it is true.
+"1 in 52,000 after five years" against Powerball's 1 in 292 million is a strong,
+true line.
 
-### The killer is product, not law: a shared prize collapses at scale
+Implement a subscription as a **recurring purchase of ranges**, never as
+membership in a shared pool (§B3). That keeps winner-takes-all, keeps
+resolution same-day, and limits records to "who is subscribed now" — which the
+payment processor already tracks.
 
-If subscribers split the prize, then N subscribers each paying $5/mo gives:
+## B7. Range assignment
 
-| Subscribers | Pool wins once every | Each person's share |
-|---|---|---|
-| 10 | 26,000 years | $45,868 |
-| 100 | 2,600 years | $4,587 |
-| 1,000 | 260 years | $459 |
-| 10,000 | 26 years | $46 |
+**Do not assign ranges to avoid duplicate work.** That problem does not exist:
+at current coverage, the chance two random searchers repeat each other is about
+2 in a billion. Random search wastes nothing measurable.
 
-Expected value per subscriber is identical in every row (~$0.15/mo) — but the
-*experience* is not. At the only subscriber counts that make it a business, the
-payout becomes trivial. Nobody wants to win $46 after waiting 26 years. The
-7.1 BTC prize is simply too small to divide. **Any design that splits it dies
-at scale.**
-
-### Therefore: if subscriptions, keep winner-takes-all
-
-Make a subscription a recurring purchase of *ranges*, not a share of a pool.
-Each month buys the subscriber their own slice; if their slice hits, they take
-the whole prize. That preserves the pre-commitment audit in §4, keeps each bet
-resolving immediately, and limits the ledger to "who is currently subscribed" —
-which the billing processor already tracks — instead of a permanent claims
-history.
-
-### Legally it is not an improvement, and one variant is worse
-
-- Selling subscriptions does not soften gambling exposure. Real lotteries sell
-  direct-debit subscriptions; it is a billing cycle, not a different product.
-- **The pooled-and-split variant drifts from gambling law into securities law:**
-  collecting money into a common enterprise and distributing proceeds is the
-  shape of a collective investment scheme. Cloud-mining contracts have been
-  pursued as unregistered securities offerings on exactly this reasoning. That
-  is a worse regime to land in, not a better one.
-
-### The clean version
-
-Subscription applied to the **gift** model in §1 is just a Patreon: $1/month
-supports the hunt, the supporter gets the show and a name on the page, and is
-owed nothing. Predictable revenue, no payout mechanic to design, no licensing,
-no dilution problem. This is the strongest form of the subscription idea and the
-only one buildable today.
-
----
-
-## 5. Range assignment (applies to any multi-participant version)
-
-**Do not assign ranges to avoid duplicate work.** That problem does not exist.
-At current coverage the chance two random searchers repeat each other is about
-2 in a billion. Pure random wastes nothing measurable.
-
-Assign ranges for the *product* and the *proof*: a map that fills in, a personal
-slice, and a record of what each participant actually got. Random search has
-nothing to display.
+Assign ranges for the product and the proof — a map that fills in, a personal
+slice, and a record of who got what.
 
 - **Sizing.** Hardware spans three orders of magnitude. Use 2^32 keys as the
-  unit (~16 min on our CPU, under a second on a 4090) and hand out batches sized
-  to the client. There are 2^38 such chunks, so the namespace never runs out and
-  no dense completion map is needed.
+  unit (~16 min on our Oracle CPU, under a second on a 4090) and hand out
+  batches sized to the client. There are 2^38 such chunks; the namespace never
+  runs out and no dense completion map is needed.
 - **Assign randomly from the unclaimed pool, never bottom-up.** The low end is
   where every default-configured searcher in the world already grinds.
-- **Verification is the hard part.** A client can report "no match" without
-  doing the work, which silently poisons the coverage map. The only practical
-  audit is decoy chunks: occasionally issue a range containing a key we planted
-  and already know. A client that reports no match on a decoy is lying or
-  broken. Design it in from the start — retrofitting means discarding all
-  coverage history.
+- **If third parties ever run the search** (a volunteer pool rather than our
+  rented GPUs), verification becomes the hard part: a client can report "no
+  match" without doing the work, silently poisoning the coverage map. The only
+  practical audit is decoy ranges containing a key we planted and already know.
+  Design it in from the start; retrofitting means discarding all coverage
+  history. Note also that a volunteer pool moves the custody problem rather than
+  solving it — the winning key appears on the finder's machine, and they can
+  simply keep it.
 
-### Why pool scale is not a joke
+## B8. Why pool scale is not a joke
 
 | Scale | Keyspace swept per year |
 |---|---|
@@ -228,38 +225,60 @@ nothing to display.
 | 100 GPUs | 1.6% |
 | 1,000 GPUs | 16% |
 
-A thousand-GPU pool has a genuine shot within a few years. This is how puzzles
-#66–#70 were solved. At that scale the binding constraint is trust, not compute
-— and note the custody problem simply moves: in a volunteer pool the winning key
-appears on the *finder's* machine, and they can keep all of it.
+A thousand-GPU operation has a genuine shot within a few years, which is how
+puzzles #66–#70 were solved. At that scale compute stops being the constraint.
 
----
+## B9. Payments and web3 (researched 2026-08-05)
 
-## 6. Web3 findings (researched 2026-08-05)
-
-Juan asked whether another chain or web3 rails would suit this better. Summary:
-**keep the hunt on Bitcoin and use web3, if at all, only for payments.**
+**Keep the hunt on Bitcoin; use web3, if at all, only for payments.**
 
 - **No Ethereum equivalent puzzle exists at meaningful scale.** The BTC puzzle
   is a 2015 one-off: 160 addresses with keys in known bit-ranges, ~1,000 BTC
   total, 79 solved. What exists on ETH instead is the Profanity vanity-address
-  flaw — a real vulnerability, and draining those keys is theft. Out of scope,
-  permanently.
+  flaw — a real vulnerability, and draining those keys is theft. Out of scope
+  permanently, premise or no premise.
 - **No chain offers a math advantage.** Ethereum uses the same secp256k1 curve.
   Identical work per key, identical odds.
-- **Bridges solve a problem we do not have.** Landscape for the record: WBTC
-  (~$10B, BitGo custody), cbBTC (~$3B, Coinbase, default on Base), tBTC (~$500M,
+- **Bridges solve a problem we do not have.** For the record: WBTC (~$10B, BitGo
+  custody), cbBTC (~$3B, Coinbase, default on Base), tBTC (~$500M,
   decentralized), plus newer BitVM2-based bridges (BOB, Citrea, Bitlayer,
-  Babylon). We would never bridge a win — it adds custody risk for nothing — and
-  taking donations does not require BTC on another chain.
+  Babylon). We would never bridge a win — custody risk for no benefit — and
+  taking payments does not require BTC on another chain.
 - **MetaMask is no longer the default.** The market fragmented and embedded
-  wallets are now the consumer norm: sign in with email or a passkey, wallet
-  created behind the scenes, nothing to install. Stripe acquired Privy in June
-  2025; MetaMask's own embedded product is the former Web3Auth. Requiring a
-  browser extension today costs most casual visitors.
-- **If crypto payment is wanted anyway:** accept USDC on Base via Coinbase
-  Commerce. Cheap, hosted, no contract to write, and the receiving address can
-  be published for transparent funding.
-- **Full web3** (embedded wallets, on-chain record of sponsored ranges, token
-  -gated views) is weeks of work and will not increase donations. Build it only
-  if learning that stack is itself the goal.
+  wallets are the consumer norm: sign in with email or passkey, wallet created
+  behind the scenes, nothing to install. Stripe acquired Privy in June 2025;
+  MetaMask's own embedded product is the former Web3Auth. Requiring a browser
+  extension today costs most casual visitors.
+- **Simplest crypto path:** accept USDC on Base via Coinbase Commerce. Cheap,
+  hosted, no contract to write, and the receiving address can be published so
+  funding is transparent.
+- **Full web3** (embedded wallets, on-chain range registry, token-gated views)
+  is weeks of work and will not increase revenue. Build it only if learning that
+  stack is the point. One genuine exception: an on-chain range registry is a
+  natural fit for the §B2 pre-commitment, since it timestamps assignments
+  publicly and immutably without us running anything.
+
+---
+
+# Appendix L — licensing facts (parked, not argued)
+
+Recorded once so the premise is honest about what it assumes.
+
+- Money for a chance at a prize is a lottery in most jurisdictions, including
+  the US and EU. Instant resolution makes it resemble a scratch card, among the
+  most tightly regulated forms.
+- **A pooled-and-split design is a different and worse problem:** collecting
+  money into a common enterprise and distributing proceeds is the shape of a
+  collective investment scheme. Cloud-mining contracts have been pursued as
+  unregistered securities on exactly that reasoning. §B3 rejects splitting on
+  product grounds anyway.
+- **Costa Rica does not issue gambling licences** (checked 2026-08-05). Operators
+  incorporate locally (SRL/SA) with a *data processing licence*, hold the actual
+  gaming licence abroad, and must block Costa Rican residents from playing. So
+  "run it from home" is not available: the operating base could sit in Costa
+  Rica, but the licence and the wagering must sit elsewhere, and Juan's own
+  country would be geo-blocked from his own product.
+- The zero-exposure version remains available and needs no premise at all: take
+  donations as gifts with no payout claim, collect no payout address, promise
+  nothing. That is what the live page does today, and a $1/month version of it
+  is simply a Patreon.
